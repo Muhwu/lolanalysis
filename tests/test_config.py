@@ -59,3 +59,19 @@ def test_missing_key_raises_config_error(tmp_path):
 def test_missing_env_file_raises_config_error(tmp_path):
     with pytest.raises(ConfigError):
         load_config(tmp_path)
+
+
+def test_platform_defaults_to_euw1(tmp_path):
+    write_env(tmp_path, "RIOT_API_KEY=k\nACCOUNTS=Foo#BAR\n")
+    assert load_config(tmp_path).platform == "euw1"
+
+
+def test_platform_parsed_and_lowercased(tmp_path):
+    write_env(tmp_path, "RIOT_API_KEY=k\nACCOUNTS=Foo#NA1\nPLATFORM=NA1\n")
+    assert load_config(tmp_path).platform == "na1"
+
+
+def test_unknown_platform_raises_config_error(tmp_path):
+    write_env(tmp_path, "RIOT_API_KEY=k\nACCOUNTS=Foo#BAR\nPLATFORM=moon1\n")
+    with pytest.raises(ConfigError, match="PLATFORM"):
+        load_config(tmp_path)

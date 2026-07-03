@@ -237,7 +237,7 @@ def _run_crawl():
         from .crawler import Crawler
         from .riot_client import RiotClient
 
-        client = RiotClient(config.riot_api_key)
+        client = RiotClient(config.riot_api_key, platform=config.platform)
         conn = db.connect(config.db_path)
 
         def status_cb(msg):

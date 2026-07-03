@@ -67,9 +67,44 @@ def test_limiter_window_expires():
 
 # ---------- RiotClient ----------
 
-def make_client(handler, limiter=None):
+def make_client(handler, limiter=None, platform="euw1"):
     transport = httpx.MockTransport(handler)
-    return RiotClient("RGAPI-test", limiter=limiter, transport=transport)
+    return RiotClient("RGAPI-test", platform=platform, limiter=limiter, transport=transport)
+
+
+def url_seen(handler_urls):
+    def handler(request):
+        handler_urls.append(str(request.url))
+        return httpx.Response(200, json=[])
+    return handler
+
+
+def test_na1_platform_routes_to_americas():
+    urls = []
+    client = make_client(url_seen(urls), platform="na1")
+    client.get_match_ids("abc", queue=420)
+    client.get_league_entries("abc")
+    assert urls[0].startswith("https://americas.api.riotgames.com/lol/match/v5/")
+    assert urls[1].startswith("https://na1.api.riotgames.com/lol/league/v4/")
+
+
+def test_oc1_uses_sea_for_matches_but_asia_for_account():
+    urls = []
+    client = make_client(url_seen(urls), platform="oc1")
+    client.get_match_ids("abc", queue=420)
+    assert urls[0].startswith("https://sea.api.riotgames.com/")
+
+    def account_handler(request):
+        urls.append(str(request.url))
+        return httpx.Response(200, json={"puuid": "x"})
+
+    make_client(account_handler, platform="oc1").get_account("Foo", "OCE")
+    assert urls[1].startswith("https://asia.api.riotgames.com/riot/account/v1/")
+
+
+def test_unknown_platform_raises_value_error():
+    with pytest.raises(ValueError):
+        RiotClient("RGAPI-test", platform="moon1")
 
 
 def test_get_account_hits_europe_route_with_token_header():

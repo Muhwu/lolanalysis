@@ -38,7 +38,7 @@ def main():
     else:
         accounts = config.accounts
 
-    client = RiotClient(config.riot_api_key)
+    client = RiotClient(config.riot_api_key, platform=config.platform)
     conn = db.connect(config.db_path)
     crawler = Crawler(client, conn, status_cb=lambda msg: print(f"  {msg}", flush=True))
 

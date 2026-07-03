@@ -20,8 +20,11 @@ serves top-lane matchup stats via FastAPI + vanilla-JS frontend.
 - **Rate limits: 20 req/1 s and 100 req/2 min**, enforced by
   `RateLimiter` in `server/riot_client.py`. Never bypass it; test crawler
   changes with `--limit 5` before any full crawl.
-- **Riot ID quirks:** account-v1 uses regional host `europe`, league-v4 uses
-  platform host `euw1`. unicode Riot IDs must be URL-encoded (the client does it).
+- **Riot ID quirks:** league-v4 uses the platform host (e.g. `euw1`), match-v5
+  the regional host (e.g. `europe`), account-v1 only exists on
+  americas/asia/europe (sea platforms fall back to asia). All derived from the
+  `PLATFORM` env var via `PLATFORM_ROUTING` in `server/riot_client.py`.
+  Unicode Riot IDs must be URL-encoded (the client does it).
 - Champion names from match-v5 are DDragon keys (`MonkeyKing` = Wukong);
   the frontend maps display names in `DISPLAY_NAME_FIXES`.
 - Timestamps are **ms epoch** everywhere in the db; match-v5 `startTime`

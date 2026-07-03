@@ -9,8 +9,14 @@ from urllib.parse import quote
 
 import httpx
 
-REGIONAL_HOST = "https://europe.api.riotgames.com"  # account-v1, match-v5
-PLATFORM_HOST = "https://euw1.api.riotgames.com"    # league-v4
+# Platform (league-v4 host) -> regional routing for match-v5.
+# account-v1 only exists on americas/asia/europe, so sea platforms use asia.
+PLATFORM_ROUTING = {
+    "euw1": "europe", "eun1": "europe", "tr1": "europe", "ru": "europe",
+    "na1": "americas", "br1": "americas", "la1": "americas", "la2": "americas",
+    "kr": "asia", "jp1": "asia",
+    "oc1": "sea", "ph2": "sea", "sg2": "sea", "th2": "sea", "tw2": "sea", "vn2": "sea",
+}
 
 DEV_KEY_LIMITS = [(20, 1.0), (100, 120.0)]
 
@@ -57,7 +63,17 @@ class RiotClient:
     MAX_429_RETRIES = 5
     MAX_5XX_RETRIES = 3
 
-    def __init__(self, api_key, limiter=None, transport=None):
+    def __init__(self, api_key, platform="euw1", limiter=None, transport=None):
+        platform = platform.lower()
+        if platform not in PLATFORM_ROUTING:
+            raise ValueError(
+                f"Unknown platform {platform!r}. Valid: {', '.join(sorted(PLATFORM_ROUTING))}"
+            )
+        region = PLATFORM_ROUTING[platform]
+        self.platform_host = f"https://{platform}.api.riotgames.com"
+        self.match_host = f"https://{region}.api.riotgames.com"
+        account_region = "asia" if region == "sea" else region
+        self.account_host = f"https://{account_region}.api.riotgames.com"
         self.limiter = limiter if limiter is not None else RateLimiter()
         self._http = httpx.Client(
             headers={"X-Riot-Token": api_key},
@@ -97,7 +113,7 @@ class RiotClient:
 
     def get_account(self, game_name, tag_line):
         url = (
-            f"{REGIONAL_HOST}/riot/account/v1/accounts/by-riot-id/"
+            f"{self.account_host}/riot/account/v1/accounts/by-riot-id/"
             f"{quote(game_name)}/{quote(tag_line)}"
         )
         return self._get(url)
@@ -110,11 +126,11 @@ class RiotClient:
             params["startTime"] = start_time
         if end_time is not None:
             params["endTime"] = end_time
-        url = f"{REGIONAL_HOST}/lol/match/v5/matches/by-puuid/{puuid}/ids"
+        url = f"{self.match_host}/lol/match/v5/matches/by-puuid/{puuid}/ids"
         return self._get(url, params=params)
 
     def get_match(self, match_id):
-        return self._get(f"{REGIONAL_HOST}/lol/match/v5/matches/{match_id}")
+        return self._get(f"{self.match_host}/lol/match/v5/matches/{match_id}")
 
     def get_league_entries(self, puuid):
-        return self._get(f"{PLATFORM_HOST}/lol/league/v4/entries/by-puuid/{puuid}")
+        return self._get(f"{self.platform_host}/lol/league/v4/entries/by-puuid/{puuid}")

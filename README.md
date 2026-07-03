@@ -20,6 +20,7 @@ Then edit `.env`:
 ```ini
 RIOT_API_KEY=RGAPI-...              # from https://developer.riotgames.com
 ACCOUNTS=YourName#EUW, Smurf#EUW    # comma-separated Riot IDs, any number
+PLATFORM=euw1                       # your server (na1, kr, eun1, ...); default euw1
 ```
 
 And run:
@@ -33,9 +34,10 @@ And run:
 Re-run `./crawl.sh` any time (or click **Update data** in the UI) to pull new
 games — the crawler is incremental and safe to interrupt/resume.
 
-The app is EUW-flavoured by default (`euw1` platform, `europe` regional
-routing); for other regions change `PLATFORM_HOST`/`REGIONAL_HOST` in
-`server/riot_client.py`.
+`PLATFORM` accepts any Riot platform id — `euw1 eun1 tr1 ru` (Europe),
+`na1 br1 la1 la2` (Americas), `kr jp1` (Asia), `oc1 ph2 sg2 th2 tw2 vn2`
+(SEA). The regional routing hosts for match history and account lookup are
+derived from it automatically.
 
 ## ⚠ Riot dev keys expire every 24 h
 

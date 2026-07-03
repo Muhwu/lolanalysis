@@ -2,6 +2,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from .riot_client import PLATFORM_ROUTING
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -14,6 +16,7 @@ class Config:
     riot_api_key: str
     db_path: Path
     accounts: list
+    platform: str = "euw1"
 
 
 def parse_env_file(path: Path) -> dict:
@@ -57,5 +60,12 @@ def load_config(root: Path | None = None) -> Config:
             'Set it to a comma-separated list of Riot IDs, e.g. ACCOUNTS=Name#EUW, Other#EUW'
         )
     accounts = parse_accounts(env["ACCOUNTS"])
+    platform = (env.get("PLATFORM") or "euw1").lower()
+    if platform not in PLATFORM_ROUTING:
+        raise ConfigError(
+            f"Unknown PLATFORM {platform!r} in {env_path}. "
+            f"Valid: {', '.join(sorted(PLATFORM_ROUTING))}"
+        )
     db_path = Path(env["DB_PATH"]) if env.get("DB_PATH") else root / "data" / "lol.sqlite"
-    return Config(riot_api_key=api_key, db_path=db_path, accounts=accounts)
+    return Config(riot_api_key=api_key, db_path=db_path, accounts=accounts,
+                  platform=platform)
