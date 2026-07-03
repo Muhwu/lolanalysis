@@ -1,0 +1,85 @@
+# CLAUDE.md
+
+Local web app: crawls Riot match history for the configured accounts into sqlite,
+serves top-lane matchup stats via FastAPI + vanilla-JS frontend.
+
+## Commands
+
+```bash
+./setup.sh                                  # venv + deps + .env
+.venv/bin/python -m pytest tests/ -q        # tests (offline, fast — run before committing)
+./crawl.sh --limit 5                        # SMALL live batch — always test crawler changes this way first
+./crawl.sh                                  # full incremental crawl
+./run.sh                                    # uvicorn on http://localhost:8321
+```
+
+## Gotchas that matter here
+
+- **Dev API key expires every 24 h.** 403 → `ApiKeyExpiredError`. Refresh at
+  developer.riotgames.com, update `RIOT_API_KEY=` in `.env` (gitignored).
+- **Rate limits: 20 req/1 s and 100 req/2 min**, enforced by
+  `RateLimiter` in `server/riot_client.py`. Never bypass it; test crawler
+  changes with `--limit 5` before any full crawl.
+- **Riot ID quirks:** account-v1 uses regional host `europe`, league-v4 uses
+  platform host `euw1`. unicode Riot IDs must be URL-encoded (the client does it).
+- Champion names from match-v5 are DDragon keys (`MonkeyKing` = Wukong);
+  the frontend maps display names in `DISPLAY_NAME_FIXES`.
+- Timestamps are **ms epoch** everywhere in the db; match-v5 `startTime`
+  param is **seconds**.
+
+## Architecture (one line each)
+
+- `server/config.py` — `.env` parser; `load_config()` → key, db path, accounts.
+- `server/riot_client.py` — httpx client + sliding-window limiter; 429 retry,
+  5xx backoff; injectable `transport`/`clock` for tests.
+- `server/parsing.py` — match-v5 JSON → `(match_row, participant_rows)`.
+- `server/crawler.py` — `Crawler.crawl_player()` pages match ids with a
+  watermark in `crawl_state` (incomplete crawls re-page full history; detail
+  fetches are skipped for stored matches, so it's cheap). `enrich_ranks()`
+  fetches lane opponents' current solo rank (7-day TTL in `player_ranks`).
+- `server/stats.py` — all aggregation in SQL over a filtered base query;
+  matchup = tracked TOP player joined to enemy TOP participant; remakes
+  (<300 s) excluded; opponent rank bucket `UNKNOWN` when not fetched.
+- `server/app.py` — FastAPI; per-request sqlite connections; crawl runs in a
+  daemon thread with module-level `CRAWL_STATE`; db path override via
+  `LOL_DB_PATH` env (used by tests). Session CRUD at `/api/sessions`;
+  `/api/stats/progress` aggregates across ALL tracked puuids (no puuid param).
+- Sessions have `title` + Markdown `notes` (legacy `note` column auto-migrates
+  in `db._migrate`). `PATCH /api/sessions/{id}` edits them;
+  `GET /api/sessions/export.md` produces the all-sessions Markdown export.
+  Markdown renders client-side via vendored `static/vendor/marked.min.js`
+  (no CDN at runtime; update by re-downloading from jsdelivr).
+- Segment rows expand to per-game lists: `stats.games_in_range(conn, puuids,
+  from_ms, to_ms, ...)` behind `GET /api/stats/games?from_ms=&to_ms=` (ms
+  bounds; client passes `to_ms-1` for half-open segments); frontend caches
+  per segment in `segmentUi.cache`, cleared on every loadProgress.
+- Coaching progress: `coaching_sessions` table (global, unique ISO date);
+  `stats.progress_segments(conn, puuids, sessions, ...)` returns
+  baseline + between + since-last segments, half-open at session-date UTC
+  midnight. `_filtered_base` accepts a puuid list for multi-account queries.
+  Frontend defaults the progress champion filter to Gwen; `#progress` hash
+  deep-links the view.
+- `static/` — no build step; state + fetch + innerHTML render in `app.js`.
+
+## Schema (data/lol.sqlite)
+
+`players(puuid PK, game_name, tag_line, is_tracked, solo_tier/division/lp, rank_fetched_at_ms)`
+`matches(match_id PK, queue_id, game_creation_ms, game_duration_s, game_version, crawled_at_ms)`
+`participants(match_id+puuid PK, champion_name, team_id, team_position, win, k/d/a, cs, gold_earned, damage_to_champions, riot_id_name)`
+`player_ranks(puuid PK, solo_tier/division/lp, fetched_at_ms)` — opponent rank cache
+`crawl_state(puuid+queue_id PK, newest_ms, complete)` — resume watermarks
+
+## Testing conventions
+
+- TDD: tests exist for every module; no network in tests (FakeClient /
+  httpx.MockTransport / fake clocks).
+- `tests/test_stats.py::add_match` is the canonical fixture builder — reuse it
+  (test_app.py imports it) rather than writing raw inserts.
+- App tests point `LOL_DB_PATH` at a tmp db via monkeypatch.
+
+## Design docs
+
+- Spec: `docs/superpowers/specs/2026-07-03-lol-topstats-design.md`
+- Plan: `docs/superpowers/plans/2026-07-03-lol-topstats.md`
+- Key user-visible assumption: rank grouping uses opponents' *current* rank
+  (no historical rank exists in the Riot API) — flagged in README.

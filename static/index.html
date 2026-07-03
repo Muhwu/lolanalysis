@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LoL Top Lane Stats</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Top Lane Stats</h1>
+  <div class="view-toggle" id="main-view-toggle" role="tablist">
+    <button id="nav-overview" class="active" role="tab">Overview</button>
+    <button id="nav-progress" role="tab">Coaching progress</button>
+  </div>
+  <nav id="account-tabs" aria-label="Accounts"></nav>
+  <div class="crawl-box">
+    <button id="crawl-btn">Update data</button>
+    <span id="crawl-status" class="muted"></span>
+  </div>
+</header>
+
+<div id="progress-view" class="hidden">
+  <section class="filter-row" aria-label="Progress filters">
+    <div class="filter-group">
+      <label class="filter-label" for="progress-champion">Champion</label>
+      <select id="progress-champion"><option value="">All</option></select>
+    </div>
+    <div class="filter-group">
+      <label class="filter-label" for="progress-queue">Queue</label>
+      <select id="progress-queue"><option value="">All</option></select>
+    </div>
+    <span class="muted">Both accounts combined · top lane only</span>
+  </section>
+
+  <section>
+    <h2>Progress between coaching sessions</h2>
+    <div id="progress-table"></div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>Coaching sessions</h2>
+      <a class="preset" href="/api/sessions/export.md" download>Export all (.md)</a>
+    </div>
+    <div id="session-list"></div>
+    <form id="session-form" class="filter-row" style="margin-top:10px">
+      <div class="filter-group">
+        <label class="filter-label" for="session-date">Date</label>
+        <input type="date" id="session-date" required>
+      </div>
+      <div class="filter-group" style="flex:1">
+        <label class="filter-label" for="session-title">Title</label>
+        <input type="text" id="session-title" placeholder="e.g. wave management" style="width:100%">
+      </div>
+      <button type="submit" class="preset">Add session</button>
+      <span id="session-error" class="muted"></span>
+    </form>
+    <p class="muted">Add full notes by expanding a session and clicking edit — Markdown supported.</p>
+  </section>
+</div>
+
+<div id="overview-view">
+<section id="filters" class="filter-row" aria-label="Filters">
+  <div class="filter-group" id="range-presets">
+    <span class="filter-label">Period</span>
+    <button data-range="all" class="preset active">All</button>
+    <button data-range="7d" class="preset">7d</button>
+    <button data-range="14d" class="preset">14d</button>
+    <button data-range="30d" class="preset">30d</button>
+    <button data-range="90d" class="preset">90d</button>
+    <button data-range="180d" class="preset">180d</button>
+    <button data-range="365d" class="preset">1y</button>
+    <button data-range="custom" class="preset">Custom</button>
+    <span id="custom-dates" class="hidden">
+      <input type="date" id="date-from" aria-label="From date">
+      <span>–</span>
+      <input type="date" id="date-to" aria-label="To date">
+    </span>
+  </div>
+  <div class="filter-group">
+    <label class="filter-label" for="champion-select">My champion</label>
+    <select id="champion-select"><option value="">All</option></select>
+  </div>
+  <div class="filter-group">
+    <label class="filter-label" for="queue-select">Queue</label>
+    <select id="queue-select"><option value="">All</option></select>
+  </div>
+  <div class="filter-group">
+    <label class="filter-label" for="rank-select">Opp. rank</label>
+    <select id="rank-select"><option value="">All</option></select>
+  </div>
+  <div class="filter-group">
+    <label class="filter-label" for="min-games">Min games</label>
+    <input type="number" id="min-games" min="1" value="1" style="width:4em">
+  </div>
+</section>
+
+<section id="summary-tiles" class="tiles" aria-label="Summary"></section>
+
+<section>
+  <div class="section-head">
+    <h2>Matchups</h2>
+    <div class="view-toggle" role="tablist">
+      <button id="view-flat" class="active" role="tab">By matchup</button>
+      <button id="view-rank" role="tab">Grouped by opponent rank</button>
+    </div>
+  </div>
+  <div id="matchup-table"></div>
+</section>
+
+<section>
+  <h2>My champions</h2>
+  <div id="champion-table"></div>
+</section>
+
+<section>
+  <h2>Recent games</h2>
+  <div id="recent-list"></div>
+</section>
+</div>
+
+<footer class="muted">
+  Rank buckets use each opponent's <em>current</em> solo-queue rank (Riot API has no
+  historical rank). Remakes (&lt;5 min) are excluded.
+</footer>
+
+<script src="vendor/marked.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

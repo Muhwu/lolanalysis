@@ -1,0 +1,207 @@
+"""Aggregated top-lane statistics.
+
+All functions operate on the tracked player's TOP-lane games, excluding
+remakes (< 300 s). The lane opponent is the enemy participant with
+team_position='TOP'; rank buckets use the opponent's current solo rank
+('UNKNOWN' when never fetched / unranked).
+"""
+import time
+from datetime import datetime, timezone
+
+REMAKE_S = 300
+
+# One row per (my TOP game, enemy TOP opponent). LEFT JOIN keeps games
+# where the enemy team has no TOP (position data missing) for summary().
+_BASE = """
+SELECT m.match_id, m.game_creation_ms, m.game_duration_s, m.queue_id,
+       me.puuid AS my_puuid,
+       me.champion_name AS my_champion, me.win, me.kills, me.deaths, me.assists,
+       me.cs, me.gold_earned, me.damage_to_champions,
+       opp.champion_name AS opp_champion, opp.puuid AS opp_puuid,
+       COALESCE(pr.solo_tier, 'UNKNOWN') AS rank_tier
+FROM participants me
+JOIN matches m ON m.match_id = me.match_id
+LEFT JOIN participants opp ON opp.match_id = me.match_id
+    AND opp.team_id != me.team_id AND opp.team_position = 'TOP'
+LEFT JOIN player_ranks pr ON pr.puuid = opp.puuid
+WHERE me.puuid IN ({puuid_slots}) AND me.team_position = 'TOP'
+  AND m.game_duration_s >= :remake_s
+"""
+
+
+def _filtered_base(puuid, from_ms=None, to_ms=None, champion=None, queues=None,
+                   rank_tier=None, require_opponent=True):
+    puuids = [puuid] if isinstance(puuid, str) else list(puuid)
+    sql = _BASE.format(puuid_slots=",".join(f":puuid{i}" for i in range(len(puuids))))
+    params = {"remake_s": REMAKE_S}
+    params.update({f"puuid{i}": p for i, p in enumerate(puuids)})
+    if require_opponent:
+        sql += " AND opp.puuid IS NOT NULL"
+    if from_ms is not None:
+        sql += " AND m.game_creation_ms >= :from_ms"
+        params["from_ms"] = from_ms
+    if to_ms is not None:
+        sql += " AND m.game_creation_ms <= :to_ms"
+        params["to_ms"] = to_ms
+    if champion:
+        sql += " AND me.champion_name = :champion"
+        params["champion"] = champion
+    if queues:
+        placeholders = ",".join(f":q{i}" for i in range(len(queues)))
+        sql += f" AND m.queue_id IN ({placeholders})"
+        params.update({f"q{i}": q for i, q in enumerate(queues)})
+    if rank_tier:
+        sql += " AND COALESCE(pr.solo_tier, 'UNKNOWN') = :rank_tier"
+        params["rank_tier"] = rank_tier
+    return sql, params
+
+
+_AGG = """
+COUNT(*) AS games,
+SUM(win) AS wins,
+AVG(CAST(win AS REAL)) AS winrate,
+AVG(kills) AS kills,
+AVG(deaths) AS deaths,
+AVG(assists) AS assists,
+(SUM(kills) + SUM(assists)) * 1.0 / MAX(SUM(deaths), 1) AS kda,
+SUM(cs) * 60.0 / SUM(game_duration_s) AS cs_min,
+SUM(gold_earned) * 60.0 / SUM(game_duration_s) AS gold_min,
+SUM(damage_to_champions) * 60.0 / SUM(game_duration_s) AS dmg_min,
+AVG(game_duration_s) AS avg_duration_s
+"""
+
+
+def matchups(conn, puuid, from_ms=None, to_ms=None, champion=None, queues=None,
+             rank_tier=None, min_games=1):
+    base, params = _filtered_base(puuid, from_ms, to_ms, champion, queues, rank_tier)
+    params["min_games"] = min_games
+    sql = f"""
+        SELECT opp_champion, {_AGG}
+        FROM ({base})
+        GROUP BY opp_champion
+        HAVING COUNT(*) >= :min_games
+        ORDER BY games DESC, winrate DESC
+    """
+    return [dict(r) for r in conn.execute(sql, params)]
+
+
+def matchups_by_rank(conn, puuid, from_ms=None, to_ms=None, champion=None, queues=None,
+                     rank_tier=None, min_games=1):
+    base, params = _filtered_base(puuid, from_ms, to_ms, champion, queues, rank_tier)
+    params["min_games"] = min_games
+    sql = f"""
+        SELECT rank_tier, opp_champion, {_AGG}
+        FROM ({base})
+        GROUP BY rank_tier, opp_champion
+        HAVING COUNT(*) >= :min_games
+        ORDER BY rank_tier, games DESC
+    """
+    return [dict(r) for r in conn.execute(sql, params)]
+
+
+def summary(conn, puuid, from_ms=None, to_ms=None, champion=None, queues=None,
+            rank_tier=None, min_games=1):
+    base, params = _filtered_base(puuid, from_ms, to_ms, champion, queues, rank_tier,
+                                  require_opponent=False)
+    totals = conn.execute(
+        f"SELECT {_AGG} FROM ({base})", params
+    ).fetchone()
+    by_champion = [
+        dict(r) for r in conn.execute(
+            f"""SELECT my_champion AS champion, {_AGG}
+                FROM ({base}) GROUP BY my_champion
+                HAVING COUNT(*) >= :min_games
+                ORDER BY games DESC""",
+            {**params, "min_games": min_games},
+        )
+    ]
+    recent = [
+        dict(r) for r in conn.execute(
+            f"""SELECT match_id, game_creation_ms, game_duration_s, queue_id,
+                       my_champion, opp_champion, rank_tier, win,
+                       kills, deaths, assists, cs
+                FROM ({base}) ORDER BY game_creation_ms DESC LIMIT 20""",
+            params,
+        )
+    ]
+    result = dict(totals) if totals["games"] else {"games": 0, "wins": 0, "winrate": None}
+    result["by_champion"] = by_champion
+    result["recent"] = recent
+    return result
+
+
+def progress_segments(conn, puuids, sessions, champion=None, queues=None,
+                      now_ms=None, baseline_days=30):
+    """Aggregate stats per period between coaching sessions.
+
+    sessions: dicts with session_date ('YYYY-MM-DD') and title, any order.
+    The returned segments expose the title under the 'note' key (existing
+    rendering contract).
+    Segments are half-open [from, to): games at a session's UTC midnight
+    count toward the segment after that session. Returns [] without sessions.
+    """
+    if not sessions:
+        return []
+    now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+    ordered = sorted(sessions, key=lambda s: s["session_date"])
+
+    def date_ms(date_str):
+        dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        return int(dt.timestamp() * 1000)
+
+    bounds = [date_ms(s["session_date"]) for s in ordered]
+    day_ms = 86_400_000
+    segments = [
+        {"label": "Baseline", "note": "", "from_ms": bounds[0] - baseline_days * day_ms,
+         "to_ms": bounds[0]},
+    ]
+    for i in range(len(ordered) - 1):
+        segments.append({
+            "label": f"{ordered[i]['session_date']} → {ordered[i + 1]['session_date']}",
+            "note": ordered[i]["title"],
+            "from_ms": bounds[i],
+            "to_ms": bounds[i + 1],
+        })
+    segments.append({
+        "label": f"Since {ordered[-1]['session_date']}",
+        "note": ordered[-1]["title"],
+        "from_ms": bounds[-1],
+        "to_ms": now_ms,
+    })
+
+    results = []
+    for segment in segments:
+        base, params = _filtered_base(
+            puuids, from_ms=segment["from_ms"], to_ms=segment["to_ms"] - 1,
+            champion=champion, queues=queues, require_opponent=False)
+        totals = dict(conn.execute(f"SELECT {_AGG} FROM ({base})", params).fetchone())
+        results.append({**segment, **totals})
+    return results
+
+
+def games_in_range(conn, puuids, from_ms=None, to_ms=None, champion=None, queues=None):
+    """Individual top-lane games for the tracked puuids, newest first."""
+    base, params = _filtered_base(puuids, from_ms=from_ms, to_ms=to_ms,
+                                  champion=champion, queues=queues,
+                                  require_opponent=False)
+    sql = f"""
+        SELECT match_id, game_creation_ms, game_duration_s, queue_id, my_puuid,
+               my_champion, opp_champion, rank_tier, win,
+               kills, deaths, assists, cs
+        FROM ({base}) ORDER BY game_creation_ms DESC
+    """
+    return [dict(r) for r in conn.execute(sql, params)]
+
+
+def filter_options(conn, puuid):
+    base, params = _filtered_base(puuid, require_opponent=False)
+    champions = [r[0] for r in conn.execute(
+        f"SELECT DISTINCT my_champion FROM ({base}) ORDER BY my_champion", params)]
+    queues = [r[0] for r in conn.execute(
+        f"SELECT DISTINCT queue_id FROM ({base}) ORDER BY queue_id", params)]
+    tiers = [r[0] for r in conn.execute(
+        f"SELECT DISTINCT rank_tier FROM ({base})", params)]
+    tier_order = ["IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM", "EMERALD",
+                  "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER", "UNKNOWN"]
+    tiers.sort(key=lambda t: tier_order.index(t) if t in tier_order else 99)
+    return {"champions": champions, "queues": queues, "rank_tiers": tiers}
