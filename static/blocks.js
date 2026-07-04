@@ -3,7 +3,7 @@
    Uses globals from app.js: state, $, getJSON, escapeHtml, champIcon,
    displayName, fmtDate, fmtDuration, renderNotes, unionFilterOptions. */
 
-const blockState = { wired: false, blocks: [], blockSize: 3, editingLearnings: null };
+const blockState = { wired: false, blocks: [], blockSize: 3, editingLearnings: null, editingNotes: null };
 
 async function initBlocks() {
   if (!blockState.wired) {
@@ -60,8 +60,11 @@ function blockGameRow(g) {
     <td><span class="champ-cell">${g.opp_champion ? champIcon(g.opp_champion) + "vs " + displayName(g.opp_champion) : "–"}</span></td>
     <td><span class="result-pill ${g.win ? "win" : "loss"}">${g.win ? "W" : "L"}</span></td>
     <td>${g.kills}/${g.deaths}/${g.assists}</td>
-    <td class="notes-cell"><textarea class="game-notes" data-entry="${g.entry_id}"
-        rows="1" placeholder="notes…">${escapeHtml(g.notes)}</textarea></td>
+    <td class="notes-cell">${blockState.editingNotes === g.entry_id
+      ? `<textarea class="game-notes" data-entry="${g.entry_id}" rows="1"
+           placeholder="notes… (Markdown, Enter saves, Shift+Enter new line)">${escapeHtml(g.notes)}</textarea>`
+      : `<div class="notes-display" data-entry="${g.entry_id}" title="Click to edit">${
+          g.notes ? renderNotes(g.notes) : `<span class="muted">notes…</span>`}</div>`}</td>
     <td><button class="preset game-remove" data-entry="${g.entry_id}" title="Remove from block">×</button></td>
   </tr>`;
 }
@@ -142,23 +145,48 @@ function renderBlocks() {
       blockState.editingLearnings = null;
       loadBlocks();
     }));
+  target.querySelectorAll(".notes-display").forEach((el) =>
+    el.addEventListener("click", () => {
+      blockState.editingNotes = +el.dataset.entry;
+      renderBlocks();
+      const input = target.querySelector(`.game-notes[data-entry="${el.dataset.entry}"]`);
+      if (input) {
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    }));
   const autoGrow = (el) => { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; };
   target.querySelectorAll(".game-notes").forEach((input) => {
     autoGrow(input);
+    let cancelled = false;
     input.addEventListener("input", () => autoGrow(input));
     input.addEventListener("keydown", (e) => {
-      // Enter saves (blur); Shift+Enter inserts a new line
+      // Enter saves (blur); Shift+Enter inserts a new line; Esc cancels
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         input.blur();
+      } else if (e.key === "Escape") {
+        cancelled = true;
+        input.blur();
       }
     });
-    input.addEventListener("change", () =>
-      fetch(`/api/blocks/games/${input.dataset.entry}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: input.value }),
-      }));
+    input.addEventListener("blur", async () => {
+      const entryId = +input.dataset.entry;
+      if (!cancelled) {
+        await fetch(`/api/blocks/games/${entryId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ notes: input.value }),
+        });
+        for (const block of blockState.blocks) {
+          const game = block.games.find((g) => g.entry_id === entryId);
+          if (game) game.notes = input.value;
+        }
+      }
+      cancelled = false;
+      blockState.editingNotes = null;
+      renderBlocks();
+    });
   });
   target.querySelectorAll(".game-remove").forEach((btn) =>
     btn.addEventListener("click", async () => {

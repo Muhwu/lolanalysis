@@ -385,6 +385,26 @@ td.notes-cell { text-align: left; white-space: normal; }
 }
 .game-notes:hover, .game-notes:focus { border-color: var(--border); background: var(--page); }
 .promote-btn { font-size: 12px; padding: 1px 7px; }
+.notes-display {
+  min-height: 22px;
+  cursor: text;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 13px;
+}
+.notes-display:hover { border-color: var(--border); background: var(--page); }
+.notes-display p, .notes-display ul, .notes-display ol { margin: 0 0 4px; }
+.notes-display p:last-child, .notes-display ul:last-child { margin-bottom: 0; }
+.notes-display ul, .notes-display ol { padding-left: 18px; }
+.notes-display code {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  background: var(--page);
+  border: 1px solid var(--grid);
+  border-radius: 4px;
+  padding: 0 3px;
+}
 
 /* ---------- trends ---------- */
 .trend-group { font-size: 14px; margin: 20px 0 8px; color: var(--text-secondary);
