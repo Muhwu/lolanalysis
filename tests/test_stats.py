@@ -283,6 +283,100 @@ def test_progress_no_sessions_returns_empty(conn):
     assert stats.progress_segments(conn, [ME], [], now_ms=NOW_MS) == []
 
 
+def add_metrics(conn, match_id, puuid=ME, **overrides):
+    from server.metrics import metric_keys
+    values = {k: None for k in metric_keys()}
+    values["has_challenges"] = 1
+    values.update(overrides)
+    db.insert_participant_metrics(conn, match_id, puuid, values)
+
+
+def test_segment_metrics_averages_and_pct(conn):
+    m1, _ = add_match(conn, when=1_000, duration=1800)
+    m2, _ = add_match(conn, when=2_000, duration=1800)
+    add_metrics(conn, m1, cs_at_10=80, lane_adv_early=1, team_dmg_pct=0.20, time_dead=180)
+    add_metrics(conn, m2, cs_at_10=90, lane_adv_early=0, team_dmg_pct=0.30, time_dead=360)
+    result = stats.segment_metrics(conn, [ME])
+    assert result["games"] == 2
+    assert result["metrics_games"] == 2
+    metrics = result["metrics"]
+    assert metrics["cs_at_10"] == pytest.approx(85.0)
+    assert metrics["lane_adv_early"] == pytest.approx(50.0)   # pct01 -> %
+    assert metrics["team_dmg_pct"] == pytest.approx(25.0)
+    assert metrics["time_dead"] == pytest.approx(100 * 540 / 3600)  # pct_time
+
+
+def test_segment_metrics_ignores_null_rows_and_reports_coverage(conn):
+    m1, _ = add_match(conn, when=1_000)
+    m2, _ = add_match(conn, when=2_000)   # no metrics row at all
+    add_metrics(conn, m1, cs_at_10=80)
+    result = stats.segment_metrics(conn, [ME])
+    assert result["games"] == 2
+    assert result["metrics_games"] == 1
+    assert result["metrics"]["cs_at_10"] == pytest.approx(80.0)
+    assert result["metrics"]["vision_adv"] is None  # never present
+
+
+def test_segment_metrics_per_min_only_counts_rows_with_value(conn):
+    m1, _ = add_match(conn, when=1_000, duration=1800)
+    m2, _ = add_match(conn, when=2_000, duration=3600)  # no metrics row
+    add_metrics(conn, m1, self_mitigated=18000)
+    result = stats.segment_metrics(conn, [ME])
+    # per_min must divide by the 1800s of the covered game only
+    assert result["metrics"]["self_mitigated"] == pytest.approx(600.0)
+
+
+def test_segment_metrics_respects_filters(conn):
+    m1, _ = add_match(conn, when=1_000, my_champ="Gwen")
+    m2, _ = add_match(conn, when=2_000, my_champ="Garen")
+    add_metrics(conn, m1, cs_at_10=80)
+    add_metrics(conn, m2, cs_at_10=40)
+    result = stats.segment_metrics(conn, [ME], champion="Gwen")
+    assert result["metrics"]["cs_at_10"] == pytest.approx(80.0)
+
+
+DAY = 86_400_000
+
+
+def test_trend_buckets_month(conn):
+    jan = 1_704_067_200_000  # 2024-01-01 UTC
+    feb = 1_706_745_600_000  # 2024-02-01 UTC
+    m1, _ = add_match(conn, when=jan, win=True)
+    m2, _ = add_match(conn, when=jan + DAY, win=False)
+    m3, _ = add_match(conn, when=feb, win=True)
+    add_metrics(conn, m1, cs_at_10=80)
+    add_metrics(conn, m2, cs_at_10=90)
+    add_metrics(conn, m3, cs_at_10=60)
+    buckets = stats.trend_buckets(conn, [ME], bucket="month")
+    assert [b["bucket"] for b in buckets] == ["2024-01", "2024-02"]
+    assert buckets[0]["games"] == 2
+    assert buckets[0]["winrate"] == pytest.approx(0.5)
+    assert buckets[0]["metrics"]["cs_at_10"] == pytest.approx(85.0)
+    assert buckets[1]["metrics"]["cs_at_10"] == pytest.approx(60.0)
+
+
+def test_trend_buckets_week_starts_monday(conn):
+    # 2024-01-03 is a Wednesday; its week bucket is Monday 2024-01-01
+    wed = 1_704_240_000_000
+    add_match(conn, when=wed)
+    buckets = stats.trend_buckets(conn, [ME], bucket="week")
+    assert buckets[0]["bucket"] == "2024-01-01"
+    # Sunday 2024-01-07 belongs to the same week; Monday 2024-01-08 doesn't
+    add_match(conn, when=wed + 4 * DAY)
+    add_match(conn, when=wed + 5 * DAY)
+    buckets = stats.trend_buckets(conn, [ME], bucket="week")
+    assert [b["bucket"] for b in buckets] == ["2024-01-01", "2024-01-08"]
+    assert buckets[0]["games"] == 2
+
+
+def test_trend_buckets_day_and_bad_bucket(conn):
+    add_match(conn, when=1_704_067_200_000)
+    buckets = stats.trend_buckets(conn, [ME], bucket="day")
+    assert buckets[0]["bucket"] == "2024-01-01"
+    with pytest.raises(ValueError):
+        stats.trend_buckets(conn, [ME], bucket="year")
+
+
 def test_filter_options(conn):
     _, opp = add_match(conn, my_champ="Garen", queue=420)
     add_match(conn, my_champ="Kled", queue=440)

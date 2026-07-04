@@ -8,7 +8,11 @@ team_position='TOP'; rank buckets use the opponent's current solo rank
 import time
 from datetime import datetime, timezone
 
+from .metrics import METRICS, metric_keys
+
 REMAKE_S = 300
+
+_METRIC_SELECT = ",\n       ".join(f"pm.{k} AS {k}" for k in metric_keys())
 
 # One row per (my TOP game, enemy TOP opponent). LEFT JOIN keeps games
 # where the enemy team has no TOP (position data missing) for summary().
@@ -18,15 +22,37 @@ SELECT m.match_id, m.game_creation_ms, m.game_duration_s, m.queue_id,
        me.champion_name AS my_champion, me.win, me.kills, me.deaths, me.assists,
        me.cs, me.gold_earned, me.damage_to_champions,
        opp.champion_name AS opp_champion, opp.puuid AS opp_puuid,
-       COALESCE(pr.solo_tier, 'UNKNOWN') AS rank_tier
+       COALESCE(pr.solo_tier, 'UNKNOWN') AS rank_tier,
+       pm.match_id AS pm_match_id,
+       """ + _METRIC_SELECT + """
 FROM participants me
 JOIN matches m ON m.match_id = me.match_id
 LEFT JOIN participants opp ON opp.match_id = me.match_id
     AND opp.team_id != me.team_id AND opp.team_position = 'TOP'
 LEFT JOIN player_ranks pr ON pr.puuid = opp.puuid
+LEFT JOIN participant_metrics pm
+    ON pm.match_id = me.match_id AND pm.puuid = me.puuid
 WHERE me.puuid IN ({puuid_slots}) AND me.team_position = 'TOP'
   AND m.game_duration_s >= :remake_s
 """
+
+
+def _metric_agg_select():
+    exprs = []
+    for m in METRICS:
+        k = m["key"]
+        if m["agg"] == "avg":
+            e = f"AVG({k})"
+        elif m["agg"] == "pct01":
+            e = f"100.0 * AVG({k})"
+        elif m["agg"] == "per_min":
+            e = f"60.0 * SUM({k}) / SUM(CASE WHEN {k} IS NOT NULL THEN game_duration_s END)"
+        elif m["agg"] == "pct_time":
+            e = f"100.0 * SUM({k}) / SUM(CASE WHEN {k} IS NOT NULL THEN game_duration_s END)"
+        else:  # pragma: no cover — registry is validated by tests
+            raise ValueError(m["agg"])
+        exprs.append(f"{e} AS {k}")
+    return ",\n".join(exprs)
 
 
 def _filtered_base(puuid, from_ms=None, to_ms=None, champion=None, queues=None,
@@ -176,6 +202,57 @@ def progress_segments(conn, puuids, sessions, champion=None, queues=None,
             champion=champion, queues=queues, require_opponent=False)
         totals = dict(conn.execute(f"SELECT {_AGG} FROM ({base})", params).fetchone())
         results.append({**segment, **totals})
+    return results
+
+
+def segment_metrics(conn, puuids, from_ms=None, to_ms=None, champion=None, queues=None):
+    """Aggregate coaching metrics over a period. NULLs are excluded per metric;
+    metrics_games reports how many games have a metrics record at all."""
+    base, params = _filtered_base(puuids, from_ms=from_ms, to_ms=to_ms,
+                                  champion=champion, queues=queues,
+                                  require_opponent=False)
+    row = conn.execute(
+        f"""SELECT COUNT(*) AS games, COUNT(pm_match_id) AS metrics_games,
+            {_metric_agg_select()}
+            FROM ({base})""",
+        params,
+    ).fetchone()
+    result = dict(row)
+    return {
+        "games": result.pop("games"),
+        "metrics_games": result.pop("metrics_games"),
+        "metrics": result,
+    }
+
+
+_BUCKET_EXPRS = {
+    "day": "strftime('%Y-%m-%d', game_creation_ms/1000, 'unixepoch')",
+    "week": "date(game_creation_ms/1000, 'unixepoch', 'weekday 0', '-6 days')",
+    "month": "strftime('%Y-%m', game_creation_ms/1000, 'unixepoch')",
+}
+
+
+def trend_buckets(conn, puuids, bucket="month", champion=None, queues=None):
+    """Base stats + coaching metrics grouped per calendar bucket, oldest first.
+    Week buckets are labeled with their Monday's date."""
+    if bucket not in _BUCKET_EXPRS:
+        raise ValueError(f"bucket must be one of {sorted(_BUCKET_EXPRS)}")
+    base, params = _filtered_base(puuids, champion=champion, queues=queues,
+                                  require_opponent=False)
+    rows = conn.execute(
+        f"""SELECT {_BUCKET_EXPRS[bucket]} AS bucket,
+            COUNT(pm_match_id) AS metrics_games,
+            {_AGG},
+            {_metric_agg_select()}
+            FROM ({base}) GROUP BY bucket ORDER BY bucket""",
+        params,
+    ).fetchall()
+    results = []
+    for row in rows:
+        record = dict(row)
+        metrics = {k: record.pop(k) for k in metric_keys()}
+        record["metrics"] = metrics
+        results.append(record)
     return results
 
 
