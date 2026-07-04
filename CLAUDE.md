@@ -70,8 +70,16 @@ serves top-lane matchup stats via FastAPI + vanilla-JS frontend.
   older matches. `stats.segment_metrics` (per period) and
   `stats.trend_buckets` (day/week/month; week = Monday date) feed
   `/api/stats/metrics` and `/api/stats/trends` (both include `meta`).
+- Block learnings: `champion_pool` (role main_blind/core/counter, replaced
+  wholesale), `blocks` + `block_games` (UNIQUE match_id+puuid). Current block
+  = newest; complete = ≥3 games (derived, `db.BLOCK_SIZE`);
+  `db.add_game_to_block` auto-advances. Hydration via
+  `stats.block_games_detailed`. API: `/api/pool`, `/api/blocks`,
+  `POST /api/blocks/games` (409 names holding block). UI in `blocks.js`;
+  "+ Block" promote buttons on Recent-games and segment game rows.
 - `static/` — no build step; state + fetch + innerHTML render in `app.js`;
-  trends view (SVG small-multiple charts + breakdown table) in `trends.js`.
+  trends view (SVG small-multiple charts + breakdown table) in `trends.js`;
+  blocks view in `blocks.js`.
 
 ## Schema (data/lol.sqlite)
 

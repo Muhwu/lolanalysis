@@ -178,11 +178,20 @@ function renderRecent(recent) {
       <td><span class="result-pill ${g.win ? "win" : "loss"}">${g.win ? "W" : "L"}</span></td>
       <td>${g.kills}/${g.deaths}/${g.assists}</td>
       <td>${fmtDuration(g.game_duration_s)}</td>
+      <td><button class="preset promote-btn" data-match="${g.match_id}"
+        data-puuid="${state.puuid}" title="Add to current block">+ Block</button></td>
     </tr>`).join("");
   target.innerHTML = `<div class="table-wrap"><table>
     <thead><tr><th>Date</th><th>Queue</th><th>Me</th><th>Opponent</th><th>Opp. rank</th>
-    <th>Result</th><th>K/D/A</th><th>Length</th></tr></thead>
+    <th>Result</th><th>K/D/A</th><th>Length</th><th></th></tr></thead>
     <tbody>${body}</tbody></table></div>`;
+  wirePromoteButtons(target);
+}
+
+function wirePromoteButtons(container) {
+  container.querySelectorAll(".promote-btn").forEach((btn) =>
+    btn.addEventListener("click", () =>
+      promoteGame(btn.dataset.match, btn.dataset.puuid, btn)));
 }
 
 function renderTabs() {
@@ -342,10 +351,12 @@ function segmentGamesTable(games) {
       <td>${g.kills}/${g.deaths}/${g.assists}</td>
       <td>${(g.cs * 60 / g.game_duration_s).toFixed(1)}</td>
       <td>${fmtDuration(g.game_duration_s)}</td>
+      <td><button class="preset promote-btn" data-match="${g.match_id}"
+        data-puuid="${g.my_puuid}" title="Add to current block">+ Block</button></td>
     </tr>`).join("");
   return `<table class="games-inner">
     <thead><tr><th>Date</th><th>Account</th><th>Me</th><th>Opponent</th><th>Opp. rank</th>
-    <th>Result</th><th>K/D/A</th><th>CS/min</th><th>Length</th></tr></thead>
+    <th>Result</th><th>K/D/A</th><th>CS/min</th><th>Length</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table>`;
 }
 
@@ -406,6 +417,7 @@ function renderProgress(segments) {
       const segment = segments.find((s) => segKey(s) === btn.dataset.key);
       if (segment) toggleSegmentGames(segment);
     }));
+  wirePromoteButtons(target);
 }
 
 const sessionUi = { expanded: new Set(), editing: null };
@@ -541,24 +553,24 @@ async function loadProgress() {
 function setMainView(view) {
   state.mainView = view;
   if (history.replaceState) {
-    const hash = view === "progress" ? "#progress" : view === "trends" ? "#trends" : "#";
+    const hash = { progress: "#progress", trends: "#trends", blocks: "#blocks" }[view] || "#";
     history.replaceState(null, "", hash);
   }
-  $("#nav-overview").classList.toggle("active", view === "overview");
-  $("#nav-progress").classList.toggle("active", view === "progress");
-  $("#nav-trends").classList.toggle("active", view === "trends");
-  $("#overview-view").classList.toggle("hidden", view !== "overview");
-  $("#progress-view").classList.toggle("hidden", view !== "progress");
-  $("#trends-view").classList.toggle("hidden", view !== "trends");
+  for (const v of ["overview", "progress", "trends", "blocks"]) {
+    $(`#nav-${v}`).classList.toggle("active", view === v);
+    $(`#${v}-view`).classList.toggle("hidden", view !== v);
+  }
   $("#account-tabs").classList.toggle("hidden", view !== "overview");
   if (view === "progress") loadProgressFilterOptions().then(loadProgress);
   if (view === "trends") initTrends();
+  if (view === "blocks") initBlocks();
 }
 
 function wireProgress() {
   $("#nav-overview").addEventListener("click", () => setMainView("overview"));
   $("#nav-progress").addEventListener("click", () => setMainView("progress"));
   $("#nav-trends").addEventListener("click", () => setMainView("trends"));
+  $("#nav-blocks").addEventListener("click", () => setMainView("blocks"));
   $("#progress-champion").addEventListener("change", (e) => {
     state.progressChampion = e.target.value; loadProgress();
   });
@@ -680,6 +692,7 @@ async function init(firstLoad = true) {
   await refresh();
   if (firstLoad && location.hash === "#progress") setMainView("progress");
   if (firstLoad && location.hash === "#trends") setMainView("trends");
+  if (firstLoad && location.hash === "#blocks") setMainView("blocks");
 }
 
 init();

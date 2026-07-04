@@ -13,6 +13,7 @@
     <button id="nav-overview" class="active" role="tab">Overview</button>
     <button id="nav-progress" role="tab">Coaching progress</button>
     <button id="nav-trends" role="tab">Trends</button>
+    <button id="nav-blocks" role="tab">Blocks</button>
   </div>
   <nav id="account-tabs" aria-label="Accounts"></nav>
   <div class="crawl-box">
@@ -58,6 +59,38 @@
       <span id="session-error" class="muted"></span>
     </form>
     <p class="muted">Add full notes by expanding a session and clicking edit — Markdown supported.</p>
+  </section>
+</div>
+
+<div id="blocks-view" class="hidden">
+  <section class="filter-row" id="pool-card" aria-label="Champion pool">
+    <div class="filter-group">
+      <label class="filter-label" for="pool-main">Main Blind</label>
+      <input type="text" id="pool-main" list="champ-list" placeholder="e.g. Gwen" style="width:9em">
+    </div>
+    <div class="filter-group" style="flex:1">
+      <label class="filter-label" for="pool-core">Core Pool</label>
+      <input type="text" id="pool-core" placeholder="comma-separated, e.g. Kled, Gragas" style="width:100%">
+    </div>
+    <div class="filter-group" style="flex:1">
+      <label class="filter-label" for="pool-counter">Counter Picks</label>
+      <input type="text" id="pool-counter" placeholder="comma-separated, e.g. Malphite, Quinn" style="width:100%">
+    </div>
+    <button id="pool-save" class="preset">Save pool</button>
+    <span id="pool-status" class="muted"></span>
+    <datalist id="champ-list"></datalist>
+  </section>
+
+  <section>
+    <h2>Blocks</h2>
+    <div id="blocks-list"></div>
+  </section>
+
+  <section>
+    <h2>Add a game to the current block</h2>
+    <p class="muted">Latest games not yet in any block. Blocks hold 3 games;
+      adding to a full block starts the next one.</p>
+    <div id="block-picker"></div>
   </section>
 </div>
 
@@ -157,5 +190,6 @@
 <script src="vendor/marked.min.js"></script>
 <script src="app.js"></script>
 <script src="trends.js"></script>
+<script src="blocks.js"></script>
 </body>
 </html>

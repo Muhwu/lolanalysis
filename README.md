@@ -93,6 +93,20 @@ Notes:
 - A session's date boundary is midnight UTC — games played on the session day
   count toward the *after* segment.
 
+## Block Learnings
+
+The **Blocks** tab (`#blocks`) supports deliberate practice:
+
+- A standing **champion pool** commitment at the top — Main Blind, Core Pool,
+  Counter Picks — editable any time.
+- **Three-game blocks**: add a game and it joins the current block; the 4th
+  game automatically opens the next block. Each game shows champion, matchup
+  and result auto-filled from the crawled match — you only write the per-game
+  notes. Each block carries a title and Markdown **learnings** summary.
+- Add games from the picker under the block list, or promote any row from
+  the Overview's *Recent games* / a coaching segment's game list with its
+  **+ Block** button. A game can be in only one block.
+
 ## Trends view
 
 The **Trends** tab (`#trends`) tracks every stat over time: small
