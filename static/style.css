@@ -310,6 +310,32 @@ tbody tr.games-row:hover td { background: var(--page); }
 
 .delta-up { color: var(--good-text); font-size: 12px; font-weight: 650; }
 .delta-down { color: var(--critical); font-size: 12px; font-weight: 650; }
+.delta-neutral { color: var(--muted); font-size: 12px; font-weight: 650; }
+
+.metric-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 10px 22px;
+  margin-bottom: 12px;
+}
+.metric-group h4 {
+  margin: 4px 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 3px 0;
+  border-bottom: 1px dotted var(--grid);
+  font-size: 13px;
+}
+.metric-label { color: var(--text-secondary); }
+.metric-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nested-games { margin-top: 10px; }
 tr.muted td { color: var(--muted); }
 #session-list table td { text-align: left; }
 #main-view-toggle { margin-left: 4px; }

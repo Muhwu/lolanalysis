@@ -242,10 +242,90 @@ function delta(current, previous, key, digits, suffix = "") {
   return `<span class="${cls}">${arrow} ${Math.abs(diff).toFixed(digits)}${suffix}</span>`;
 }
 
-const segmentUi = { expanded: new Set(), cache: new Map(), segments: [] };
+const segmentUi = { expanded: new Set(), expandedGames: new Set(), cache: new Map(), segments: [] };
 
 function segKey(segment) {
   return `${segment.from_ms}:${segment.to_ms}`;
+}
+
+function progressFilterParams(segment) {
+  const params = new URLSearchParams({ from_ms: segment.from_ms, to_ms: segment.to_ms - 1 });
+  if (state.progressChampion) params.set("champion", state.progressChampion);
+  if (state.progressQueue) params.set("queue", state.progressQueue);
+  return params;
+}
+
+function prevNonEmpty(segment) {
+  const i = segmentUi.segments.indexOf(segment);
+  return segmentUi.segments.slice(0, i).reverse().find((s) => s.games > 0) || null;
+}
+
+async function ensureSegmentMetrics(segment) {
+  const targets = [segment];
+  const prev = prevNonEmpty(segment);
+  if (prev) targets.push(prev);
+  await Promise.all(targets.map(async (s) => {
+    const cacheKey = "metrics:" + segKey(s);
+    if (segmentUi.cache.has(cacheKey)) return;
+    const data = await getJSON(`/api/stats/metrics?${progressFilterParams(s)}`);
+    if (!state.metricsMeta) state.metricsMeta = data.meta;
+    segmentUi.cache.set(cacheKey, data);
+  }));
+}
+
+function fmtMetric(value, m) {
+  return value == null ? "–" : value.toFixed(m.decimals) + (m.suffix || "");
+}
+
+function metricDelta(current, previous, m) {
+  if (current == null || previous == null) return "";
+  const diff = current - previous;
+  const arrow = diff >= 0 ? "▲" : "▼";
+  const cls = m.direction === 0 ? "delta-neutral"
+    : (diff * m.direction >= 0 ? "delta-up" : "delta-down");
+  return `<span class="${cls}">${arrow} ${Math.abs(diff).toFixed(m.decimals)}${m.suffix || ""}</span>`;
+}
+
+function segmentMetricsPanel(segment) {
+  const key = segKey(segment);
+  const data = segmentUi.cache.get("metrics:" + key);
+  if (!data) return `<div class="muted">Loading…</div>`;
+  const prev = prevNonEmpty(segment);
+  const prevData = prev ? segmentUi.cache.get("metrics:" + segKey(prev)) : null;
+  const meta = state.metricsMeta || [];
+  const groups = [...new Set(meta.map((m) => m.group))];
+  const coverage = data.metrics_games < data.games
+    ? `<div class="muted" style="margin-bottom:8px">Detailed metrics available for
+       ${data.metrics_games} of ${data.games} games in this period.</div>` : "";
+  const groupHtml = groups.map((g) => {
+    const rows = meta.filter((m) => m.group === g).map((m) => `
+      <div class="metric-row">
+        <span class="metric-label">${m.label}</span>
+        <span class="metric-value">${fmtMetric(data.metrics[m.key], m)}
+          <span class="delta-slot">${prevData ? metricDelta(data.metrics[m.key], prevData.metrics[m.key], m) : ""}</span>
+        </span>
+      </div>`).join("");
+    return `<div class="metric-group"><h4>${g}</h4>${rows}</div>`;
+  }).join("");
+  const gamesOpen = segmentUi.expandedGames.has(key);
+  return `${coverage}<div class="metric-groups">${groupHtml}</div>
+    <button class="preset games-toggle" data-key="${key}" aria-expanded="${gamesOpen}">
+      ${gamesOpen ? "▾" : "▸"} Games (${segment.games})</button>
+    ${gamesOpen ? `<div class="nested-games">${segmentGamesTable(segmentUi.cache.get("games:" + key))}</div>` : ""}`;
+}
+
+async function toggleSegmentGames(segment) {
+  const key = segKey(segment);
+  if (segmentUi.expandedGames.has(key)) {
+    segmentUi.expandedGames.delete(key);
+  } else {
+    segmentUi.expandedGames.add(key);
+    const cacheKey = "games:" + key;
+    if (!segmentUi.cache.has(cacheKey)) {
+      segmentUi.cache.set(cacheKey, await getJSON(`/api/stats/games?${progressFilterParams(segment)}`));
+    }
+  }
+  renderProgress(segmentUi.segments);
 }
 
 function segmentGamesTable(games) {
@@ -276,12 +356,7 @@ async function toggleSegment(segment) {
     return;
   }
   segmentUi.expanded.add(key);
-  if (!segmentUi.cache.has(key)) {
-    const params = new URLSearchParams({ from_ms: segment.from_ms, to_ms: segment.to_ms - 1 });
-    if (state.progressChampion) params.set("champion", state.progressChampion);
-    if (state.progressQueue) params.set("queue", state.progressQueue);
-    segmentUi.cache.set(key, await getJSON(`/api/stats/games?${params}`));
-  }
+  await ensureSegmentMetrics(segment);
   renderProgress(segmentUi.segments);
 }
 
@@ -315,7 +390,7 @@ function renderProgress(segments) {
       <td>${fmt(segment.dmg_min, 0)}</td>
     </tr>`;
     if (expanded) {
-      html += `<tr class="games-row"><td colspan="8">${segmentGamesTable(segmentUi.cache.get(key))}</td></tr>`;
+      html += `<tr class="games-row"><td colspan="8">${segmentMetricsPanel(segment)}</td></tr>`;
     }
     return html;
   }).join("");
@@ -325,6 +400,11 @@ function renderProgress(segments) {
     <tbody>${rows}</tbody></table></div>`;
   target.querySelectorAll(".seg-toggle").forEach((btn) =>
     btn.addEventListener("click", () => toggleSegment(segments[+btn.dataset.i])));
+  target.querySelectorAll(".games-toggle").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const segment = segments.find((s) => segKey(s) === btn.dataset.key);
+      if (segment) toggleSegmentGames(segment);
+    }));
 }
 
 const sessionUi = { expanded: new Set(), editing: null };
