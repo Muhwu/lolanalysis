@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db, stats
 from .config import PROJECT_ROOT, load_config
+from .metrics import METRICS
 
 app = FastAPI(title="lolanalysis")
 
@@ -227,6 +228,43 @@ def api_games(request: Request, from_ms: int | None = None, to_ms: int | None = 
         for game in games:
             game["account"] = names.get(game.pop("my_puuid"), "?")
         return games
+    finally:
+        conn.close()
+
+
+def _tracked_puuids(conn):
+    return [r["puuid"] for r in
+            conn.execute("SELECT puuid FROM players WHERE is_tracked=1")]
+
+
+@app.get("/api/stats/metrics")
+def api_metrics(request: Request, from_ms: int | None = None, to_ms: int | None = None):
+    params = dict(request.query_params)
+    queues = [int(q) for q in request.query_params.getlist("queue")] or None
+    conn = get_conn()
+    try:
+        result = stats.segment_metrics(
+            conn, _tracked_puuids(conn), from_ms=from_ms, to_ms=to_ms,
+            champion=params.get("champion") or None, queues=queues)
+        result["meta"] = METRICS
+        return result
+    finally:
+        conn.close()
+
+
+@app.get("/api/stats/trends")
+def api_trends(request: Request, bucket: str = "month"):
+    params = dict(request.query_params)
+    queues = [int(q) for q in request.query_params.getlist("queue")] or None
+    conn = get_conn()
+    try:
+        try:
+            buckets = stats.trend_buckets(
+                conn, _tracked_puuids(conn), bucket=bucket,
+                champion=params.get("champion") or None, queues=queues)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        return {"buckets": buckets, "meta": METRICS}
     finally:
         conn.close()
 

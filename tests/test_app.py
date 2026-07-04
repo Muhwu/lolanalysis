@@ -190,6 +190,49 @@ def test_games_endpoint_rejects_bad_bounds(client):
     assert client.get("/api/stats/games?from_ms=yesterday").status_code == 422
 
 
+def seed_metrics(client, cs_values):
+    """Attach metric rows to the fixture matches (EUW1_* ids ascend)."""
+    import os
+    from server.metrics import metric_keys
+    conn = db.connect(os.environ["LOL_DB_PATH"])
+    rows = conn.execute(
+        "SELECT match_id FROM participants WHERE puuid=? ORDER BY match_id", (ME,)
+    ).fetchall()
+    for row, cs in zip(rows, cs_values):
+        values = {k: None for k in metric_keys()}
+        values.update({"has_challenges": 1, "cs_at_10": cs})
+        db.insert_participant_metrics(conn, row["match_id"], ME, values)
+    conn.close()
+
+
+def test_metrics_endpoint_returns_values_and_meta(client):
+    seed_metrics(client, [80, 90, 70])
+    data = client.get("/api/stats/metrics").json()
+    assert data["games"] == 3
+    assert data["metrics_games"] == 3
+    assert data["metrics"]["cs_at_10"] == pytest.approx(80.0)
+    meta = {m["key"]: m for m in data["meta"]}
+    assert meta["cs_at_10"]["group"] == "Laning"
+    assert meta["time_dead"]["direction"] == -1
+    # bounds filtering works like /api/stats/games
+    filtered = client.get(
+        "/api/stats/metrics?from_ms=1700000000000&to_ms=1700000050000").json()
+    assert filtered["games"] == 1
+
+
+def test_trends_endpoint_buckets_and_meta(client):
+    seed_metrics(client, [80, 90, 70])
+    data = client.get("/api/stats/trends?bucket=month").json()
+    assert [b["bucket"] for b in data["buckets"]] == ["2020-09", "2023-11"]
+    assert data["buckets"][1]["games"] == 2
+    assert data["buckets"][1]["winrate"] == pytest.approx(0.5)
+    assert any(m["key"] == "cs_at_10" for m in data["meta"])
+    assert client.get("/api/stats/trends?bucket=decade").status_code == 400
+    # default bucket is month
+    default = client.get("/api/stats/trends").json()
+    assert [b["bucket"] for b in default["buckets"]] == ["2020-09", "2023-11"]
+
+
 def test_index_served(client):
     response = client.get("/")
     assert response.status_code == 200
