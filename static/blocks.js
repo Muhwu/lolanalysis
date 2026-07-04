@@ -60,8 +60,8 @@ function blockGameRow(g) {
     <td><span class="champ-cell">${g.opp_champion ? champIcon(g.opp_champion) + "vs " + displayName(g.opp_champion) : "–"}</span></td>
     <td><span class="result-pill ${g.win ? "win" : "loss"}">${g.win ? "W" : "L"}</span></td>
     <td>${g.kills}/${g.deaths}/${g.assists}</td>
-    <td class="notes-cell"><input type="text" class="game-notes" data-entry="${g.entry_id}"
-        value="${escapeHtml(g.notes)}" placeholder="notes…"></td>
+    <td class="notes-cell"><textarea class="game-notes" data-entry="${g.entry_id}"
+        rows="1" placeholder="notes…">${escapeHtml(g.notes)}</textarea></td>
     <td><button class="preset game-remove" data-entry="${g.entry_id}" title="Remove from block">×</button></td>
   </tr>`;
 }
@@ -142,13 +142,17 @@ function renderBlocks() {
       blockState.editingLearnings = null;
       loadBlocks();
     }));
-  target.querySelectorAll(".game-notes").forEach((input) =>
+  const autoGrow = (el) => { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; };
+  target.querySelectorAll(".game-notes").forEach((input) => {
+    autoGrow(input);
+    input.addEventListener("input", () => autoGrow(input));
     input.addEventListener("change", () =>
       fetch(`/api/blocks/games/${input.dataset.entry}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes: input.value }),
-      })));
+      }));
+  });
   target.querySelectorAll(".game-remove").forEach((btn) =>
     btn.addEventListener("click", async () => {
       if (!confirm("Remove this game from the block?")) return;
