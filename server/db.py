@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS coaching_sessions (
     session_date TEXT NOT NULL UNIQUE,
     title TEXT NOT NULL DEFAULT '',
     notes TEXT NOT NULL DEFAULT '',
+    start_ranks TEXT,
     created_at_ms INTEGER
 );
 
@@ -84,6 +85,8 @@ CREATE TABLE IF NOT EXISTS blocks (
     title TEXT NOT NULL DEFAULT '',
     learnings TEXT NOT NULL DEFAULT '',
     pool_snapshot TEXT,
+    start_ranks TEXT,
+    end_ranks TEXT,
     created_at_ms INTEGER
 );
 
@@ -130,9 +133,16 @@ def _migrate(conn):
         if "notes" not in session_columns:
             conn.execute(
                 "ALTER TABLE coaching_sessions ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
+    if session_columns and "start_ranks" not in session_columns:
+        conn.execute("ALTER TABLE coaching_sessions ADD COLUMN start_ranks TEXT")
     block_columns = {r["name"] for r in conn.execute("PRAGMA table_info(blocks)")}
-    if block_columns and "pool_snapshot" not in block_columns:
-        conn.execute("ALTER TABLE blocks ADD COLUMN pool_snapshot TEXT")
+    if block_columns:
+        if "pool_snapshot" not in block_columns:
+            conn.execute("ALTER TABLE blocks ADD COLUMN pool_snapshot TEXT")
+        if "start_ranks" not in block_columns:
+            conn.execute("ALTER TABLE blocks ADD COLUMN start_ranks TEXT")
+        if "end_ranks" not in block_columns:
+            conn.execute("ALTER TABLE blocks ADD COLUMN end_ranks TEXT")
     conn.commit()
 
 
@@ -209,12 +219,24 @@ def insert_participant_metrics(conn, match_id, puuid, values):
         )
 
 
+def tracked_ranks(conn):
+    """Current solo ranks of all tracked accounts, for rank snapshots."""
+    return [
+        {"account": f"{r['game_name']}#{r['tag_line']}", "tier": r["solo_tier"],
+         "division": r["solo_division"], "lp": r["solo_lp"]}
+        for r in conn.execute(
+            """SELECT game_name, tag_line, solo_tier, solo_division, solo_lp
+               FROM players WHERE is_tracked=1 ORDER BY game_name""")
+    ]
+
+
 def add_session(conn, session_date, title="", notes=""):
     with conn:
         cursor = conn.execute(
-            """INSERT INTO coaching_sessions (session_date, title, notes, created_at_ms)
-               VALUES (?, ?, ?, CAST(strftime('%s','now') AS INTEGER) * 1000)""",
-            (session_date, title, notes),
+            """INSERT INTO coaching_sessions
+               (session_date, title, notes, start_ranks, created_at_ms)
+               VALUES (?, ?, ?, ?, CAST(strftime('%s','now') AS INTEGER) * 1000)""",
+            (session_date, title, notes, json.dumps(tracked_ranks(conn))),
         )
     return cursor.lastrowid
 
@@ -293,7 +315,8 @@ def _now_expr():
 def create_block(conn):
     with conn:
         cursor = conn.execute(
-            f"INSERT INTO blocks (created_at_ms) VALUES ({_now_expr()})")
+            f"INSERT INTO blocks (start_ranks, created_at_ms) VALUES (?, {_now_expr()})",
+            (json.dumps(tracked_ranks(conn)),))
     return cursor.lastrowid
 
 
@@ -324,11 +347,15 @@ def add_game_to_block(conn, match_id, puuid):
 
 
 def snapshot_pool_to_block(conn, block_id):
-    """Stamp the current pool onto a block, only if not already stamped."""
+    """Stamp the current pool + end ranks onto a completed block (only once)."""
     with conn:
         cursor = conn.execute(
             "UPDATE blocks SET pool_snapshot=? WHERE id=? AND pool_snapshot IS NULL",
             (json.dumps(get_pool(conn)), block_id),
+        )
+        conn.execute(
+            "UPDATE blocks SET end_ranks=? WHERE id=? AND end_ranks IS NULL",
+            (json.dumps(tracked_ranks(conn)), block_id),
         )
     return cursor.rowcount > 0
 

@@ -379,6 +379,35 @@ def test_single_game_metrics_endpoint(client):
         "/api/stats/games/metrics?match_id=EUW1_nope&puuid=x").status_code == 404
 
 
+def test_settings_hidden_views_round_trip(client):
+    assert client.get("/api/settings").json()["hidden_views"] == []
+    response = client.put("/api/settings", json={
+        "riot_api_key": "k", "accounts": ["A#B"], "platform": "euw1",
+        "hidden_views": ["overview", "trends"]})
+    assert response.status_code == 200
+    assert client.get("/api/settings").json()["hidden_views"] == ["overview", "trends"]
+    assert client.put("/api/settings", json={
+        "riot_api_key": "k", "accounts": ["A#B"], "platform": "euw1",
+        "hidden_views": ["settings"]}).status_code == 400
+
+
+def test_session_and_block_ranks_exposed_parsed(client):
+    import os
+    conn = db.connect(os.environ["LOL_DB_PATH"])
+    conn.execute("UPDATE players SET solo_tier='PLATINUM', solo_division='II', solo_lp=45")
+    conn.commit()
+    conn.close()
+    client.post("/api/sessions", json={"date": "2026-07-05"})
+    session = client.get("/api/sessions").json()[0]
+    assert session["start_ranks"][0]["tier"] == "PLATINUM"
+    game = client.get("/api/stats/games").json()[0]
+    client.post("/api/blocks/games", json={"match_id": game["match_id"],
+                                           "puuid": game["my_puuid"]})
+    block = client.get("/api/blocks").json()["blocks"][0]
+    assert block["start_ranks"][0]["lp"] == 45
+    assert block["end_ranks"] is None
+
+
 def test_version_endpoint(client):
     data = client.get("/api/version").json()
     assert data["version"].count(".") == 2  # semver from the VERSION file

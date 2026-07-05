@@ -86,12 +86,21 @@ def api_version():
     return {"version": config.app_version(), "repo": config.GITHUB_REPO}
 
 
+HIDEABLE_VIEWS = {"overview", "progress", "trends", "blocks"}
+
+
+def _hidden_views(conn):
+    raw = db.get_settings(conn).get("hidden_views")
+    return json.loads(raw) if raw else []
+
+
 @app.get("/api/settings")
 def api_get_settings():
     conn = get_conn()
     try:
         settings = config.resolve_settings(conn)
         settings["platforms"] = sorted(PLATFORM_ROUTING)
+        settings["hidden_views"] = _hidden_views(conn)
         return settings
     finally:
         conn.close()
@@ -115,15 +124,20 @@ def api_put_settings(body: dict):
         cleaned.append(f"{name.strip()}#{tag.strip()}")
     if platform not in PLATFORM_ROUTING:
         raise HTTPException(400, f"unknown platform {platform!r}")
+    hidden_views = body.get("hidden_views", [])
+    if not isinstance(hidden_views, list) or not set(hidden_views) <= HIDEABLE_VIEWS:
+        raise HTTPException(400, f"hidden_views must be a subset of {sorted(HIDEABLE_VIEWS)}")
     conn = get_conn()
     try:
         db.set_settings(conn, {
             "riot_api_key": api_key,
             "accounts": json.dumps(cleaned),
             "platform": platform,
+            "hidden_views": json.dumps(hidden_views),
         })
         settings = config.resolve_settings(conn)
         settings["platforms"] = sorted(PLATFORM_ROUTING)
+        settings["hidden_views"] = hidden_views
         return settings
     finally:
         conn.close()
@@ -188,7 +202,13 @@ def api_filters(puuid: str):
 def api_sessions():
     conn = get_conn()
     try:
-        return [dict(r) for r in db.list_sessions(conn)]
+        sessions = []
+        for row in db.list_sessions(conn):
+            record = dict(row)
+            raw = record.pop("start_ranks", None)
+            record["start_ranks"] = json.loads(raw) if raw else None
+            sessions.append(record)
+        return sessions
     finally:
         conn.close()
 
@@ -395,6 +415,9 @@ def _blocks_payload(conn):
                   "complete": len(games) >= db.BLOCK_SIZE}
         snapshot = record.pop("pool_snapshot", None)
         record["pool"] = json.loads(snapshot) if snapshot else None
+        for key in ("start_ranks", "end_ranks"):
+            raw = record.pop(key, None)
+            record[key] = json.loads(raw) if raw else None
         blocks.append(record)
     return blocks
 

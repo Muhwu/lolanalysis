@@ -278,6 +278,17 @@ def test_games_in_range_lists_game_without_top_opponent(conn):
     assert games[0]["opp_champion"] is None
 
 
+def test_progress_segments_carry_session_start_ranks(conn):
+    import json
+    add_match(conn, when=S1_MS + DAY_MS)
+    session_rows = [{"session_date": "2026-06-28", "title": "t",
+                     "start_ranks": json.dumps([{"account": "A#EUW", "tier": "GOLD",
+                                                 "division": "I", "lp": 10}])}]
+    segments = stats.progress_segments(conn, [ME], session_rows, now_ms=NOW_MS)
+    assert segments[0]["start_ranks"] is None            # baseline
+    assert segments[1]["start_ranks"][0]["tier"] == "GOLD"
+
+
 def test_progress_no_sessions_returns_empty(conn):
     add_match(conn)
     assert stats.progress_segments(conn, [ME], [], now_ms=NOW_MS) == []

@@ -238,6 +238,62 @@ def test_add_duplicate_game_raises_and_is_findable(conn):
     assert db.find_block_for_game(conn, "EUW1_none", "me") is None
 
 
+def test_session_captures_tracked_ranks_at_creation(conn):
+    import json
+    db.upsert_player(conn, "p1", "Muhwu", "EUW", is_tracked=True)
+    conn.execute("UPDATE players SET solo_tier='PLATINUM', solo_division='II', solo_lp=45"
+                 " WHERE puuid='p1'")
+    conn.commit()
+    db.add_session(conn, "2026-07-05", "t")
+    row = db.list_sessions(conn)[0]
+    ranks = json.loads(row["start_ranks"])
+    assert ranks == [{"account": "Muhwu#EUW", "tier": "PLATINUM",
+                      "division": "II", "lp": 45}]
+
+
+def test_block_captures_start_and_end_ranks(conn):
+    import json
+    db.upsert_player(conn, "me", "Muhwu", "EUW", is_tracked=True)
+    conn.execute("UPDATE players SET solo_tier='PLATINUM', solo_division='II', solo_lp=40"
+                 " WHERE puuid='me'")
+    conn.commit()
+    ids = _seed_block_matches(conn, 3)
+    db.add_game_to_block(conn, ids[0], "me")
+    block = db.list_blocks(conn)[0]
+    assert json.loads(block["start_ranks"])[0]["lp"] == 40
+    assert block["end_ranks"] is None
+    # LP changes before the block completes
+    conn.execute("UPDATE players SET solo_lp=67 WHERE puuid='me'")
+    conn.commit()
+    db.add_game_to_block(conn, ids[1], "me")
+    db.add_game_to_block(conn, ids[2], "me")  # completes the block
+    block = db.list_blocks(conn)[0]
+    assert json.loads(block["start_ranks"])[0]["lp"] == 40
+    assert json.loads(block["end_ranks"])[0]["lp"] == 67
+
+
+def test_rank_columns_migrate_onto_legacy_tables(tmp_path):
+    import sqlite3
+    path = tmp_path / "legacy.sqlite"
+    legacy = sqlite3.connect(path)
+    legacy.execute("""CREATE TABLE coaching_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, session_date TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
+        created_at_ms INTEGER)""")
+    legacy.execute("""CREATE TABLE blocks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL DEFAULT '',
+        learnings TEXT NOT NULL DEFAULT '', pool_snapshot TEXT, created_at_ms INTEGER)""")
+    legacy.execute("INSERT INTO coaching_sessions (session_date) VALUES ('2026-06-28')")
+    legacy.execute("INSERT INTO blocks (created_at_ms) VALUES (1)")
+    legacy.commit()
+    legacy.close()
+    conn = db.connect(path)
+    assert db.list_sessions(conn)[0]["start_ranks"] is None
+    block = db.list_blocks(conn)[0]
+    assert block["start_ranks"] is None and block["end_ranks"] is None
+    conn.close()
+
+
 def test_completing_block_snapshots_current_pool(conn):
     import json
     db.set_pool(conn, "Gwen", ["Kled"], ["Quinn"])

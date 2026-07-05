@@ -5,6 +5,7 @@ remakes (< 300 s). The lane opponent is the enemy participant with
 team_position='TOP'; rank buckets use the opponent's current solo rank
 ('UNKNOWN' when never fetched / unranked).
 """
+import json
 import time
 from datetime import datetime, timezone
 
@@ -175,11 +176,15 @@ def progress_segments(conn, puuids, sessions, champion=None, queues=None,
         dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         return int(dt.timestamp() * 1000)
 
+    def session_ranks(session):
+        raw = session["start_ranks"] if "start_ranks" in session.keys() else None
+        return json.loads(raw) if raw else None
+
     bounds = [date_ms(s["session_date"]) for s in ordered]
     day_ms = 86_400_000
     segments = [
         {"label": "Baseline", "note": "", "from_ms": bounds[0] - baseline_days * day_ms,
-         "to_ms": bounds[0]},
+         "to_ms": bounds[0], "start_ranks": None},
     ]
     for i in range(len(ordered) - 1):
         segments.append({
@@ -187,12 +192,14 @@ def progress_segments(conn, puuids, sessions, champion=None, queues=None,
             "note": ordered[i]["title"],
             "from_ms": bounds[i],
             "to_ms": bounds[i + 1],
+            "start_ranks": session_ranks(ordered[i]),
         })
     segments.append({
         "label": f"Since {ordered[-1]['session_date']}",
         "note": ordered[-1]["title"],
         "from_ms": bounds[-1],
         "to_ms": now_ms,
+        "start_ranks": session_ranks(ordered[-1]),
     })
 
     results = []
