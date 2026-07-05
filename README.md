@@ -6,7 +6,19 @@ winrates** (plus KDA, CS/min, gold/min, damage/min), filterable by date range,
 own champion, queue, and opponent rank — plus a **coaching progress** view that
 tracks your improvement between coaching sessions.
 
-## Local setup
+## Desktop app (no Python required)
+
+A packaged single-file build is available: it starts the server, opens a
+native window (or your browser), and walks you through setup — API key,
+accounts, and server — in an in-app **Settings** view (⚙). Data lives in
+your OS app-data directory.
+
+Build it yourself with `pip install pyinstaller pywebview` then
+`pyinstaller --onefile --name coach-potato --add-data "static:static"
+desktop.py`, or download per-OS binaries from the **Build desktop binaries**
+GitHub Actions workflow (runs on tags and manual dispatch).
+
+## Local setup (development)
 
 Requirements: Python 3.11+ on Linux/macOS/WSL.
 

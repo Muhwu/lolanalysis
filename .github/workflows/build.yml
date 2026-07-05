@@ -1,0 +1,40 @@
+name: Build desktop binaries
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: coach-potato-linux
+            binary: dist/coach-potato
+          - os: windows-latest
+            artifact: coach-potato-windows
+            binary: dist/coach-potato.exe
+          - os: macos-latest
+            artifact: coach-potato-macos
+            binary: dist/coach-potato
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt pyinstaller
+          pip install pywebview || true
+      - name: Build
+        run: >
+          pyinstaller --onefile --noconfirm --name coach-potato
+          --add-data "static:static" desktop.py
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.binary }}

@@ -15,6 +15,15 @@ serves top-lane matchup stats via FastAPI + vanilla-JS frontend.
 
 ## Gotchas that matter here
 
+- **Runtime settings live in the db `settings` table** (Settings view /
+  `/api/settings`), with `.env` as read-through fallback for dev
+  (`config.resolve_settings`; tests monkeypatch `config.ENV_FALLBACK_ROOT`).
+  The web app no longer needs `.env`; `crawl.py` CLI still uses it.
+  `config.default_db_path()`: LOL_DB_PATH → env; frozen → OS app-data dir;
+  else `data/lol.sqlite`. `desktop.py` + PyInstaller (`--add-data
+  static:static`) produce the packaged build; CI matrix in
+  `.github/workflows/build.yml`.
+
 - **Dev API key expires every 24 h.** 403 → `ApiKeyExpiredError`. Refresh at
   developer.riotgames.com, update `RIOT_API_KEY=` in `.env` (gitignored).
 - **Rate limits: 20 req/1 s and 100 req/2 min**, enforced by
