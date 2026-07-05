@@ -437,6 +437,31 @@ td.notes-cell { text-align: left; white-space: normal; }
 .chip-main { background: rgba(42, 120, 214, 0.13); border: 1px solid var(--series-1); }
 .chip-core { background: rgba(27, 175, 122, 0.13); border: 1px solid #1baf7a; }
 .chip-counter { background: rgba(237, 161, 0, 0.16); border: 1px solid #c98500; }
+.chip-plain { background: var(--accent-wash); border: 1px solid var(--border); }
+
+.welcome-banner {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--accent-wash);
+  border: 1px solid var(--series-1);
+  border-radius: 10px;
+}
+#settings-card {
+  margin-top: 16px;
+  padding: 16px 18px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  max-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.settings-field { display: flex; flex-direction: column; gap: 5px; }
+.settings-field input[type="text"], .settings-field select { max-width: 100%; }
+.settings-field p { margin: 0; }
+.settings-field a { color: var(--series-1); }
+
 .chip-x {
   border: none;
   background: none;

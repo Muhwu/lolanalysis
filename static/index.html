@@ -15,6 +15,7 @@
     <button id="nav-progress" role="tab">Coaching progress</button>
     <button id="nav-trends" role="tab">Trends</button>
     <button id="nav-blocks" role="tab">Blocks</button>
+    <button id="nav-settings" role="tab" title="Settings" aria-label="Settings">⚙</button>
   </div>
   <nav id="account-tabs" aria-label="Accounts"></nav>
   <div class="crawl-box">
@@ -60,6 +61,38 @@
       <span id="session-error" class="muted"></span>
     </form>
     <p class="muted">Add full notes by expanding a session and clicking edit — Markdown supported.</p>
+  </section>
+</div>
+
+<div id="settings-view" class="hidden">
+  <div id="settings-banner" class="welcome-banner hidden">
+    👋 <strong>Welcome to Coach Potato!</strong> Add your Riot API key and the
+    accounts to track, save, then hit <em>Update data</em> to fetch your match
+    history (a long first crawl — roughly 2 minutes per 100 games).
+  </div>
+  <section id="settings-card">
+    <div class="settings-field">
+      <label class="filter-label" for="setting-key">Riot API key</label>
+      <input type="text" id="setting-key" placeholder="RGAPI-..." spellcheck="false" autocomplete="off">
+      <p class="muted">Get one at
+        <a href="https://developer.riotgames.com" target="_blank" rel="noopener">developer.riotgames.com</a>.
+        Development keys expire every 24&nbsp;h — paste a fresh one here when crawls start failing.</p>
+    </div>
+    <div class="settings-field">
+      <label class="filter-label" for="settings-accounts-input">Accounts to track</label>
+      <div class="chip-box" id="settings-accounts">
+        <input class="chip-input" id="settings-accounts-input" placeholder="Name#TAG, Enter to add…">
+      </div>
+      <p class="muted">Any number of Riot IDs, e.g. <code>Player#EUW</code>. Stats combine all of them.</p>
+    </div>
+    <div class="settings-field">
+      <label class="filter-label" for="setting-platform">Server / platform</label>
+      <select id="setting-platform"></select>
+    </div>
+    <div class="settings-field">
+      <button id="settings-save" class="preset">Save settings</button>
+      <span id="settings-status" class="muted"></span>
+    </div>
   </section>
 </div>
 

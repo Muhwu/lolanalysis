@@ -556,7 +556,7 @@ function setMainView(view) {
     const hash = { progress: "#progress", trends: "#trends", blocks: "#blocks" }[view] || "#";
     history.replaceState(null, "", hash);
   }
-  for (const v of ["overview", "progress", "trends", "blocks"]) {
+  for (const v of ["overview", "progress", "trends", "blocks", "settings"]) {
     $(`#nav-${v}`).classList.toggle("active", view === v);
     $(`#${v}-view`).classList.toggle("hidden", view !== v);
   }
@@ -564,6 +564,81 @@ function setMainView(view) {
   if (view === "progress") loadProgressFilterOptions().then(loadProgress);
   if (view === "trends") initTrends();
   if (view === "blocks") initBlocks();
+  if (view === "settings") initSettings();
+}
+
+// ---------- settings ----------
+
+const settingsUi = { wired: false, accounts: [] };
+
+function renderAccountChips() {
+  const box = $("#settings-accounts");
+  box.querySelectorAll(".chip").forEach((chip) => chip.remove());
+  const input = box.querySelector(".chip-input");
+  input.insertAdjacentHTML("beforebegin", settingsUi.accounts.map((a) =>
+    `<span class="chip chip-plain">${escapeHtml(a)}
+       <button class="chip-x" data-account="${escapeHtml(a)}" title="Remove"
+         aria-label="Remove ${escapeHtml(a)}">×</button></span>`).join(""));
+  box.querySelectorAll(".chip-x").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      settingsUi.accounts = settingsUi.accounts.filter((a) => a !== btn.dataset.account);
+      renderAccountChips();
+    }));
+}
+
+async function initSettings() {
+  const data = await getJSON("/api/settings");
+  $("#setting-key").value = data.riot_api_key;
+  $("#setting-platform").innerHTML = data.platforms.map((p) =>
+    `<option value="${p}" ${p === data.platform ? "selected" : ""}>${p}</option>`).join("");
+  settingsUi.accounts = data.accounts;
+  renderAccountChips();
+  $("#settings-banner").classList.toggle("hidden", data.configured);
+  if (settingsUi.wired) return;
+  settingsUi.wired = true;
+  const input = $("#settings-accounts-input");
+  const addAccount = () => {
+    const value = input.value.trim();
+    if (!value) return;
+    if (!value.includes("#")) {
+      $("#settings-status").textContent = "accounts must be Name#TAG";
+      return;
+    }
+    if (!settingsUi.accounts.includes(value)) settingsUi.accounts.push(value);
+    input.value = "";
+    $("#settings-status").textContent = "";
+    renderAccountChips();
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      addAccount();
+    } else if (e.key === "Backspace" && !input.value) {
+      settingsUi.accounts.pop();
+      renderAccountChips();
+    }
+  });
+  $("#settings-accounts").addEventListener("click", () => input.focus());
+  $("#settings-save").addEventListener("click", async () => {
+    addAccount(); // commit any half-typed account first
+    const response = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        riot_api_key: $("#setting-key").value,
+        accounts: settingsUi.accounts,
+        platform: $("#setting-platform").value,
+      }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (response.ok) {
+      $("#settings-banner").classList.add("hidden");
+      $("#settings-status").textContent =
+        "saved ✓ — use Update data to fetch your match history";
+    } else {
+      $("#settings-status").textContent = body.detail || `error ${response.status}`;
+    }
+  });
 }
 
 function wireProgress() {
@@ -571,6 +646,7 @@ function wireProgress() {
   $("#nav-progress").addEventListener("click", () => setMainView("progress"));
   $("#nav-trends").addEventListener("click", () => setMainView("trends"));
   $("#nav-blocks").addEventListener("click", () => setMainView("blocks"));
+  $("#nav-settings").addEventListener("click", () => setMainView("settings"));
   $("#progress-champion").addEventListener("change", (e) => {
     state.progressChampion = e.target.value; loadProgress();
   });
@@ -676,26 +752,35 @@ async function loadDdragonVersion() {
 
 async function init(firstLoad = true) {
   state.players = await getJSON("/api/players");
-  if (!state.players.length) {
-    document.body.innerHTML = `<div class="empty" style="margin-top:40px">
-      No data yet. Run <code>./crawl.sh --limit 20</code> first, then reload.</div>`;
-    return;
-  }
-  if (!state.puuid || !state.players.some((p) => p.puuid === state.puuid)) {
-    state.puuid = state.players[0].puuid;
-  }
-  renderTabs();
   if (firstLoad) {
     await loadDdragonVersion();
     wireFilters();
     wireProgress();
     pollCrawl();
   }
+  if (!state.players.length) {
+    $("#summary-tiles").innerHTML = `<div class="tile" style="min-width:100%">
+      <div class="label">No match data yet</div>
+      <div class="value" style="font-size:16px">Add your API key and accounts in
+        <a href="#settings" id="goto-settings">Settings ⚙</a>, then press <strong>Update data</strong>.</div></div>`;
+    const link = $("#goto-settings");
+    if (link) link.addEventListener("click", (e) => { e.preventDefault(); setMainView("settings"); });
+    if (firstLoad) {
+      const settings = await getJSON("/api/settings");
+      setMainView(settings.configured ? "overview" : "settings");
+    }
+    return;
+  }
+  if (!state.puuid || !state.players.some((p) => p.puuid === state.puuid)) {
+    state.puuid = state.players[0].puuid;
+  }
+  renderTabs();
   await loadFilterOptions();
   await refresh();
   if (firstLoad && location.hash === "#progress") setMainView("progress");
   if (firstLoad && location.hash === "#trends") setMainView("trends");
   if (firstLoad && location.hash === "#blocks") setMainView("blocks");
+  if (firstLoad && location.hash === "#settings") setMainView("settings");
 }
 
 init();
