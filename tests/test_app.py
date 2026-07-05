@@ -379,6 +379,27 @@ def test_single_game_metrics_endpoint(client):
         "/api/stats/games/metrics?match_id=EUW1_nope&puuid=x").status_code == 404
 
 
+def test_settings_auto_crawl_round_trip_and_default(client):
+    data = client.get("/api/settings").json()
+    assert data["auto_crawl_hours"] == 3      # default: every few hours
+    assert data["last_crawl_ms"] is None
+    response = client.put("/api/settings", json={
+        "riot_api_key": "k", "accounts": ["A#B"], "platform": "euw1",
+        "auto_crawl_hours": 12})
+    assert response.status_code == 200
+    assert client.get("/api/settings").json()["auto_crawl_hours"] == 12
+    # 0 disables; negatives and junk rejected
+    assert client.put("/api/settings", json={
+        "riot_api_key": "k", "accounts": ["A#B"], "platform": "euw1",
+        "auto_crawl_hours": 0}).status_code == 200
+    assert client.put("/api/settings", json={
+        "riot_api_key": "k", "accounts": ["A#B"], "platform": "euw1",
+        "auto_crawl_hours": -2}).status_code == 400
+    assert client.put("/api/settings", json={
+        "riot_api_key": "k", "accounts": ["A#B"], "platform": "euw1",
+        "auto_crawl_hours": "soon"}).status_code == 400
+
+
 def test_settings_hidden_views_round_trip(client):
     assert client.get("/api/settings").json()["hidden_views"] == []
     response = client.put("/api/settings", json={

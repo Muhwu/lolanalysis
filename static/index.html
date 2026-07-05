@@ -114,6 +114,13 @@
         (data collection is unaffected).</p>
     </div>
     <div class="settings-field">
+      <label class="filter-label" for="setting-auto-crawl">Auto-update interval (hours)</label>
+      <input type="number" id="setting-auto-crawl" min="0" step="1" value="3" style="width:6em">
+      <p class="muted">While the app is open, new games are fetched on this schedule
+        (0 = off). Data also updates once on startup and whenever you press
+        <em>Update data</em>.</p>
+    </div>
+    <div class="settings-field">
       <button id="settings-save" class="preset">Save settings</button>
       <span id="settings-status" class="muted"></span>
     </div>

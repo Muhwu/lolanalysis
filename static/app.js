@@ -688,10 +688,12 @@ async function initSettings() {
   $("#setting-platform").innerHTML = platforms.map((p) =>
     `<option value="${p}" ${p === data.platform ? "selected" : ""}>${PLATFORM_LABELS[p] || p.toUpperCase()}</option>`).join("");
   settingsUi.accounts = data.accounts;
+  settingsUi.wasUnconfigured = !data.configured;
   renderAccountChips();
   document.querySelectorAll(".view-toggle-cb").forEach((cb) => {
     cb.checked = !(data.hidden_views || []).includes(cb.value);
   });
+  $("#setting-auto-crawl").value = data.auto_crawl_hours;
   $("#settings-banner").classList.toggle("hidden", data.configured);
   if (settingsUi.wired) return;
   settingsUi.wired = true;
@@ -736,14 +738,20 @@ async function initSettings() {
         accounts: settingsUi.accounts,
         platform: $("#setting-platform").value,
         hidden_views: hiddenViews,
+        auto_crawl_hours: Math.max(0, parseInt($("#setting-auto-crawl").value, 10) || 0),
       }),
     });
     const body = await response.json().catch(() => ({}));
     if (response.ok) {
       applyHiddenViews(body.hidden_views);
       $("#settings-banner").classList.add("hidden");
-      $("#settings-status").textContent =
-        "saved ✓ — use Update data to fetch your match history";
+      if (settingsUi.wasUnconfigured && body.configured) {
+        settingsUi.wasUnconfigured = false;
+        $("#settings-status").textContent = "saved ✓ — fetching your match history now…";
+        startCrawl();
+      } else {
+        $("#settings-status").textContent = "saved ✓";
+      }
     } else {
       $("#settings-status").textContent = body.detail || `error ${response.status}`;
     }
@@ -780,6 +788,28 @@ function wireProgress() {
     $("#session-title").value = "";
     loadProgress();
   });
+}
+
+// ---------- auto crawl ----------
+
+const STARTUP_CRAWL_MIN_GAP_MS = 15 * 60 * 1000; // skip if we crawled minutes ago
+
+async function startCrawl() {
+  const status = await getJSON("/api/crawl/status");
+  if (!status.running) await fetch("/api/crawl", { method: "POST" });
+  pollCrawl();
+}
+
+function maybeStartupCrawl(settings) {
+  if (!settings.configured) return;
+  if (Date.now() - (settings.last_crawl_ms || 0) > STARTUP_CRAWL_MIN_GAP_MS) startCrawl();
+}
+
+async function autoCrawlTick() {
+  const settings = await getJSON("/api/settings");
+  if (!settings.configured || !settings.auto_crawl_hours) return;
+  const due = (settings.last_crawl_ms || 0) + settings.auto_crawl_hours * 3_600_000;
+  if (Date.now() > due) startCrawl();
 }
 
 // ---------- update check ----------
@@ -896,10 +926,7 @@ function wireFilters() {
   $("#view-rank").addEventListener("click", () => setView("rank"));
   renderColPicker($("#progress-cols"), "cp-cols-progress", PROGRESS_COLS, progressCols,
     () => renderProgress(segmentUi.segments));
-  $("#crawl-btn").addEventListener("click", async () => {
-    await fetch("/api/crawl", { method: "POST" });
-    pollCrawl();
-  });
+  $("#crawl-btn").addEventListener("click", startCrawl);
 }
 
 function setView(view) {
@@ -936,6 +963,8 @@ async function init(firstLoad = true) {
     checkForUpdates();
     const settings = await getJSON("/api/settings");
     applyHiddenViews(settings.hidden_views);
+    maybeStartupCrawl(settings);
+    setInterval(autoCrawlTick, 10 * 60 * 1000);
   }
   if (!state.players.length) {
     $("#summary-tiles").innerHTML = `<div class="tile" style="min-width:100%">

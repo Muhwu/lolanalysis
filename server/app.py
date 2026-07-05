@@ -94,13 +94,27 @@ def _hidden_views(conn):
     return json.loads(raw) if raw else []
 
 
+DEFAULT_AUTO_CRAWL_HOURS = 3
+
+
+def _extra_settings(conn):
+    stored = db.get_settings(conn)
+    hours = stored.get("auto_crawl_hours")
+    last = stored.get("last_crawl_ms")
+    return {
+        "hidden_views": _hidden_views(conn),
+        "auto_crawl_hours": int(hours) if hours is not None else DEFAULT_AUTO_CRAWL_HOURS,
+        "last_crawl_ms": int(last) if last else None,
+    }
+
+
 @app.get("/api/settings")
 def api_get_settings():
     conn = get_conn()
     try:
         settings = config.resolve_settings(conn)
         settings["platforms"] = sorted(PLATFORM_ROUTING)
-        settings["hidden_views"] = _hidden_views(conn)
+        settings.update(_extra_settings(conn))
         return settings
     finally:
         conn.close()
@@ -127,6 +141,9 @@ def api_put_settings(body: dict):
     hidden_views = body.get("hidden_views", [])
     if not isinstance(hidden_views, list) or not set(hidden_views) <= HIDEABLE_VIEWS:
         raise HTTPException(400, f"hidden_views must be a subset of {sorted(HIDEABLE_VIEWS)}")
+    hours = body.get("auto_crawl_hours", DEFAULT_AUTO_CRAWL_HOURS)
+    if not isinstance(hours, int) or isinstance(hours, bool) or hours < 0:
+        raise HTTPException(400, "auto_crawl_hours must be a non-negative whole number")
     conn = get_conn()
     try:
         db.set_settings(conn, {
@@ -134,10 +151,11 @@ def api_put_settings(body: dict):
             "accounts": json.dumps(cleaned),
             "platform": platform,
             "hidden_views": json.dumps(hidden_views),
+            "auto_crawl_hours": str(hours),
         })
         settings = config.resolve_settings(conn)
         settings["platforms"] = sorted(PLATFORM_ROUTING)
-        settings["hidden_views"] = hidden_views
+        settings.update(_extra_settings(conn))
         return settings
     finally:
         conn.close()
@@ -611,6 +629,7 @@ def _run_crawl():
         crawler.enrich_ranks()
         crawler.backfill_metrics()
         crawler.refresh_tracked_ranks()
+        db.set_settings(conn, {"last_crawl_ms": str(int(time.time() * 1000))})
         conn.close()
         CRAWL_STATE["last_result"] = results
         CRAWL_STATE["message"] = "done"
