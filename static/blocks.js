@@ -332,7 +332,7 @@ function blockCard(block, isCurrent) {
       <span class="session-actions">
         <details class="col-picker">
           <summary class="preset icon-btn" title="Export this block"
-            aria-label="Export block ${block.id}">⬇</summary>
+            aria-label="Export block ${block.id}">📤</summary>
           <div class="col-menu">
             <a href="/api/blocks/export.md?block_id=${block.id}" download>Export .md</a>
             <a href="/api/blocks/export.csv?block_id=${block.id}" download>Export .csv</a>
