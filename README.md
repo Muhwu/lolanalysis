@@ -1,4 +1,4 @@
-# lolanalysis — LoL Top Lane Stats
+# Coach Potato 🥔 — LoL Top Lane Stats
 
 A small local web app that crawls the Riot API match history for any number of
 League of Legends accounts into a SQLite database and shows **top-lane matchup
@@ -11,7 +11,7 @@ tracks your improvement between coaching sessions.
 Requirements: Python 3.11+ on Linux/macOS/WSL.
 
 ```bash
-git clone <this repo> && cd lolanalysis
+git clone <this repo> && cd coach-potato
 ./setup.sh              # creates .venv, installs deps, creates .env from .env.example
 ```
 

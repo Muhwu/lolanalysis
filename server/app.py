@@ -14,7 +14,7 @@ from . import db, stats
 from .config import PROJECT_ROOT, load_config
 from .metrics import METRICS
 
-app = FastAPI(title="lolanalysis")
+app = FastAPI(title="Coach Potato")
 
 CRAWL_STATE = {"running": False, "message": "idle", "last_result": None, "error": None}
 

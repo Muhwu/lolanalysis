@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Local web app: crawls Riot match history for the configured accounts into sqlite,
+**Coach Potato** — local web app: crawls Riot match history for the configured accounts into sqlite,
 serves top-lane matchup stats via FastAPI + vanilla-JS frontend.
 
 ## Commands
