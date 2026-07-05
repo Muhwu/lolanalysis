@@ -38,8 +38,8 @@
       <label class="filter-label" for="progress-queue">Queue</label>
       <select id="progress-queue"><option value="">All</option></select>
     </div>
-    <span id="progress-cols"></span>
     <span class="muted">Both accounts combined · top lane only</span>
+    <span id="progress-cols" style="margin-left:auto"></span>
   </section>
 
   <section>
@@ -158,11 +158,18 @@
   <section>
     <div class="section-head">
       <h2>Blocks</h2>
-      <a class="preset" href="/api/blocks/export.md" download>Export .md</a>
-      <a class="preset" href="/api/blocks/export.csv" download>Export .csv</a>
-      <button id="copy-discord" class="preset">Copy for Discord</button>
-      <span id="blocks-cols"></span>
-      <span id="blocks-export-status" class="muted"></span>
+      <div class="head-actions">
+        <span id="blocks-export-status" class="muted"></span>
+        <span id="blocks-cols"></span>
+        <details class="col-picker">
+          <summary class="preset icon-btn" title="Export all blocks" aria-label="Export all blocks">⬇</summary>
+          <div class="col-menu">
+            <a href="/api/blocks/export.md" download>Export .md</a>
+            <a href="/api/blocks/export.csv" download>Export .csv</a>
+            <button id="copy-discord" type="button">Copy for Discord</button>
+          </div>
+        </details>
+      </div>
     </div>
     <div id="blocks-list"></div>
   </section>

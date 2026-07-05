@@ -38,7 +38,14 @@ async function initBlocks() {
   if (!blockState.wired) {
     blockState.wired = true;
     $("#pool-save").addEventListener("click", savePool);
-    $("#copy-discord").addEventListener("click", copyDiscordMarkdown);
+    $("#copy-discord").addEventListener("click", () => {
+      copyDiscordMarkdown(blockState.blocks);
+      closeMenus();
+    });
+    document.addEventListener("click", (e) => {
+      // download links inside export menus should also collapse the menu
+      if (e.target.matches(".col-menu a")) closeMenus();
+    });
     renderColPicker($("#blocks-cols"), "cp-cols-blocks", BLOCK_COLS, blockCols,
       () => renderBlocks());
     wireChipBoxes();
@@ -49,9 +56,9 @@ async function initBlocks() {
 
 // Discord renders bold/lists/inline-code but not tables, so this uses
 // plain lines with ✅/❌ result marks.
-function discordMarkdown() {
+function discordMarkdown(blocks) {
   const lines = [];
-  for (const block of blockState.blocks) {
+  for (const block of blocks) {
     const wins = block.games.filter((g) => g.win).length;
     const title = block.title ? ` — ${block.title}` : "";
     lines.push(`**Block #${block.id}${title}** (${wins}–${block.games.length - wins})`);
@@ -74,15 +81,20 @@ function discordMarkdown() {
   return lines.join("\n").trim();
 }
 
-async function copyDiscordMarkdown() {
+async function copyDiscordMarkdown(blocks) {
   const status = $("#blocks-export-status");
   try {
-    await navigator.clipboard.writeText(discordMarkdown());
+    await navigator.clipboard.writeText(discordMarkdown(blocks));
     status.textContent = "copied ✓";
   } catch {
     status.textContent = "copy failed — clipboard unavailable";
   }
   setTimeout(() => { status.textContent = ""; }, 2500);
+}
+
+function closeMenus() {
+  document.querySelectorAll("details.col-picker[open]").forEach((d) =>
+    d.removeAttribute("open"));
 }
 
 // full champion roster from the static data file (see CLAUDE.md to re-fetch)
@@ -318,6 +330,15 @@ function blockCard(block, isCurrent) {
       <input type="text" class="block-title" data-id="${block.id}"
         value="${escapeHtml(block.title)}" placeholder="block title…">
       <span class="session-actions">
+        <details class="col-picker">
+          <summary class="preset icon-btn" title="Export this block"
+            aria-label="Export block ${block.id}">⬇</summary>
+          <div class="col-menu">
+            <a href="/api/blocks/export.md?block_id=${block.id}" download>Export .md</a>
+            <a href="/api/blocks/export.csv?block_id=${block.id}" download>Export .csv</a>
+            <button class="block-discord" data-id="${block.id}" type="button">Copy for Discord</button>
+          </div>
+        </details>
         <button class="preset icon-btn block-delete" data-id="${block.id}"
           title="Delete block" aria-label="Delete block">🗑</button>
       </span>
@@ -436,6 +457,12 @@ function renderBlocks() {
       if (!confirm("Remove this game from the block?")) return;
       await fetch(`/api/blocks/games/${btn.dataset.entry}`, { method: "DELETE" });
       loadBlocks();
+    }));
+  target.querySelectorAll(".block-discord").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const block = blockState.blocks.find((b) => b.id === +btn.dataset.id);
+      if (block) copyDiscordMarkdown([block]);
+      closeMenus();
     }));
   target.querySelectorAll(".block-delete").forEach((btn) =>
     btn.addEventListener("click", async () => {

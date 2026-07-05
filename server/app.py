@@ -459,11 +459,21 @@ def _game_date(game):
                                   tz=timezone.utc).strftime("%Y-%m-%d")
 
 
+def _blocks_for_export(conn, block_id):
+    blocks = _blocks_payload(conn)
+    if block_id is None:
+        return blocks
+    selected = [b for b in blocks if b["id"] == block_id]
+    if not selected:
+        raise HTTPException(404, "no such block")
+    return selected
+
+
 @app.get("/api/blocks/export.md")
-def api_blocks_export_md():
+def api_blocks_export_md(block_id: int | None = None):
     conn = get_conn()
     try:
-        blocks = _blocks_payload(conn)
+        blocks = _blocks_for_export(conn, block_id)
     finally:
         conn.close()
     parts = ["# Block Learnings\n"]
@@ -502,13 +512,13 @@ def api_blocks_export_md():
 
 
 @app.get("/api/blocks/export.csv")
-def api_blocks_export_csv():
+def api_blocks_export_csv(block_id: int | None = None):
     import csv
     import io
 
     conn = get_conn()
     try:
-        blocks = _blocks_payload(conn)
+        blocks = _blocks_for_export(conn, block_id)
     finally:
         conn.close()
     buffer = io.StringIO()

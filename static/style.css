@@ -413,7 +413,21 @@ td.notes-cell { text-align: left; white-space: normal; }
 }
 .game-notes:hover, .game-notes:focus { border-color: var(--border); background: var(--page); }
 .promote-btn { font-size: 12px; padding: 1px 7px; }
-.icon-btn { font-size: 14px; padding: 2px 8px; line-height: 1.2; }
+.icon-btn { font-size: 17px; padding: 4px 11px; line-height: 1.25; }
+.head-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.col-menu a, .col-menu button {
+  display: block;
+  text-align: left;
+  color: var(--text-primary);
+  text-decoration: none;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.col-menu a:hover, .col-menu button:hover { color: var(--series-1); }
 
 #pool-card {
   display: grid;

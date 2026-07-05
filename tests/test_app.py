@@ -473,6 +473,19 @@ def test_blocks_export_markdown(client):
     assert "Garen" in body or "Kled" in body  # hydrated matchup line
 
 
+def test_blocks_export_single_block(client):
+    seed_block(client)  # block 1: two games
+    game = client.get("/api/stats/games").json()[2]
+    client.post("/api/blocks/games",
+                json={"match_id": game["match_id"], "puuid": game["my_puuid"]})  # fills block 1
+    game4 = client.get("/api/stats/games").json()  # any game already used? use sessions...
+    body = client.get("/api/blocks/export.md?block_id=1").text
+    assert "## Block #1 — Fundamentals" in body
+    csv_lines = client.get("/api/blocks/export.csv?block_id=1").text.strip().splitlines()
+    assert len(csv_lines) == 4  # header + 3 games
+    assert client.get("/api/blocks/export.md?block_id=99").status_code == 404
+
+
 def test_blocks_export_csv(client):
     seed_block(client)
     response = client.get("/api/blocks/export.csv")
