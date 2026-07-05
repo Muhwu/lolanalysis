@@ -6,7 +6,14 @@
 const blockState = {
   wired: false, blocks: [], blockSize: 3, editingLearnings: null, editingNotes: null,
   pool: { main_blind: [], core: [], counter: [] },
+  collapsed: new Set(JSON.parse(localStorage.getItem("cp-collapsed-blocks") || "[]")),
+  expandedGameStats: new Set(),
+  gameMetricsCache: new Map(),
 };
+
+function persistCollapsed() {
+  localStorage.setItem("cp-collapsed-blocks", JSON.stringify([...blockState.collapsed]));
+}
 
 const POOL_ROLES = {
   main_blind: { cls: "chip-main", glyph: "★", label: "Main blind" },
@@ -120,8 +127,42 @@ async function loadBlocks() {
   await renderBlockPicker();
 }
 
+function gameMetricsPanel(entryId) {
+  const data = blockState.gameMetricsCache.get(entryId);
+  if (data === null) return `<div class="muted">No detailed metrics recorded for this game.</div>`;
+  if (!data) return `<div class="muted">Loading…</div>`;
+  const meta = data.meta;
+  const groups = [...new Set(meta.map((m) => m.group))];
+  return `<div class="metric-groups">` + groups.map((g) => {
+    const rows = meta.filter((m) => m.group === g).map((m) => `
+      <div class="metric-row">
+        <span class="metric-label">${m.label}</span>
+        <span class="metric-value">${fmtMetric(data.metrics[m.key], m)}</span>
+      </div>`).join("");
+    return `<div class="metric-group"><h4>${g}</h4>${rows}</div>`;
+  }).join("") + `</div>`;
+}
+
+async function toggleGameStats(entryId, matchId, puuid) {
+  if (blockState.expandedGameStats.has(entryId)) {
+    blockState.expandedGameStats.delete(entryId);
+  } else {
+    blockState.expandedGameStats.add(entryId);
+    if (!blockState.gameMetricsCache.has(entryId)) {
+      const response = await fetch(
+        `/api/stats/games/metrics?match_id=${encodeURIComponent(matchId)}&puuid=${encodeURIComponent(puuid)}`);
+      blockState.gameMetricsCache.set(entryId, response.ok ? await response.json() : null);
+    }
+  }
+  renderBlocks();
+}
+
 function blockGameRow(g) {
-  return `<tr>
+  const statsOpen = blockState.expandedGameStats.has(g.entry_id);
+  let html = `<tr>
+    <td><button class="preset seg-toggle game-stats-toggle" data-entry="${g.entry_id}"
+      data-match="${g.match_id}" data-puuid="${g.puuid}" aria-expanded="${statsOpen}"
+      title="Per-game stats">${statsOpen ? "▾" : "▸"}</button></td>
     <td>${fmtDate(g.game_creation_ms)}</td>
     <td>${escapeHtml(g.account)}</td>
     <td><span class="champ-cell">${champIcon(g.my_champion)}${displayName(g.my_champion)}</span></td>
@@ -135,6 +176,10 @@ function blockGameRow(g) {
           g.notes ? renderNotes(g.notes) : `<span class="muted">notes…</span>`}</div>`}</td>
     <td><button class="preset game-remove" data-entry="${g.entry_id}" title="Remove from block">×</button></td>
   </tr>`;
+  if (statsOpen) {
+    html += `<tr class="games-row"><td colspan="9">${gameMetricsPanel(g.entry_id)}</td></tr>`;
+  }
+  return html;
 }
 
 function blockPoolChips(pool) {
@@ -149,6 +194,7 @@ function blockPoolChips(pool) {
 
 function blockCard(block, isCurrent) {
   const wins = block.games.filter((g) => g.win).length;
+  const collapsed = blockState.collapsed.has(block.id);
   const editing = blockState.editingLearnings === block.id;
   let learnings;
   if (editing) {
@@ -171,8 +217,10 @@ function blockCard(block, isCurrent) {
         : `<p class="muted">No learnings recorded yet.</p>`}</div>
     </div>`;
   }
-  return `<div class="session-card block-card">
-    <div class="session-head">
+  const head = `<div class="session-head">
+      <button class="preset session-toggle block-collapse" data-id="${block.id}"
+        aria-expanded="${!collapsed}" title="${collapsed ? "Expand" : "Collapse"} block">
+        ${collapsed ? "▸" : "▾"}</button>
       <span class="session-date">Block #${block.id}</span>
       ${isCurrent ? `<span class="block-badge">current</span>` : ""}
       <span class="muted">${block.games.length}/${blockState.blockSize} games
@@ -183,10 +231,15 @@ function blockCard(block, isCurrent) {
         <button class="preset icon-btn block-delete" data-id="${block.id}"
           title="Delete block" aria-label="Delete block">🗑</button>
       </span>
-    </div>
+    </div>`;
+  if (collapsed) {
+    return `<div class="session-card block-card">${head}</div>`;
+  }
+  return `<div class="session-card block-card">
+    ${head}
     ${blockPoolChips(block.pool)}
     ${block.games.length ? `<div class="table-wrap block-games"><table>
-      <thead><tr><th>Date</th><th>Account</th><th>Me</th><th>Opponent</th>
+      <thead><tr><th></th><th>Date</th><th>Account</th><th>Me</th><th>Opponent</th>
       <th>Result</th><th>K/D/A</th><th class="notes-col">Notes</th><th></th></tr></thead>
       <tbody>${block.games.map(blockGameRow).join("")}</tbody></table></div>` : ""}
     ${learnings}
@@ -203,6 +256,16 @@ function renderBlocks() {
   target.innerHTML = blockState.blocks
     .map((b) => blockCard(b, b.id === currentId)).join("");
 
+  target.querySelectorAll(".block-collapse").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const id = +btn.dataset.id;
+      blockState.collapsed.has(id) ? blockState.collapsed.delete(id) : blockState.collapsed.add(id);
+      persistCollapsed();
+      renderBlocks();
+    }));
+  target.querySelectorAll(".game-stats-toggle").forEach((btn) =>
+    btn.addEventListener("click", () =>
+      toggleGameStats(+btn.dataset.entry, btn.dataset.match, btn.dataset.puuid)));
   target.querySelectorAll(".block-title").forEach((input) =>
     input.addEventListener("change", () =>
       fetch(`/api/blocks/${input.dataset.id}`, {
