@@ -685,6 +685,45 @@ function wireProgress() {
   });
 }
 
+// ---------- update check ----------
+
+function isNewerVersion(candidate, current) {
+  const a = candidate.split(".").map(Number);
+  const b = current.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((a[i] || 0) > (b[i] || 0)) return true;
+    if ((a[i] || 0) < (b[i] || 0)) return false;
+  }
+  return false;
+}
+
+async function checkForUpdates() {
+  try {
+    const info = await getJSON("/api/version");
+    $("#app-version").textContent = `v${info.version}`;
+    if (info.version === "dev") return;
+    let latest = localStorage.getItem("cp-latest-tag") || "";
+    const lastCheck = +localStorage.getItem("cp-update-checked") || 0;
+    if (Date.now() - lastCheck > 86_400_000) {  // at most one GitHub call per day
+      const release = await getJSON(
+        `https://api.github.com/repos/${info.repo}/releases/latest`);
+      latest = release.tag_name || "";
+      localStorage.setItem("cp-latest-tag", latest);
+      localStorage.setItem("cp-update-checked", String(Date.now()));
+    }
+    const version = latest.replace(/^v/, "");
+    if (version && isNewerVersion(version, info.version)) {
+      const banner = $("#update-banner");
+      banner.innerHTML = `⬆ <strong>Coach Potato v${escapeHtml(version)}</strong> is available —
+        <a href="https://github.com/${info.repo}/releases/latest" target="_blank"
+        rel="noopener">download the update</a> (you have v${escapeHtml(info.version)})`;
+      banner.classList.remove("hidden");
+    }
+  } catch {
+    // offline, rate-limited, or no releases published yet — stay quiet
+  }
+}
+
 // ---------- crawl ----------
 
 let crawlTimer = null;
@@ -769,6 +808,7 @@ async function init(firstLoad = true) {
     wireFilters();
     wireProgress();
     pollCrawl();
+    checkForUpdates();
   }
   if (!state.players.length) {
     $("#summary-tiles").innerHTML = `<div class="tile" style="min-width:100%">

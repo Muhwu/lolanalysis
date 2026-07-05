@@ -15,7 +15,7 @@ your OS app-data directory.
 
 Build it yourself with `pip install pyinstaller pywebview` then
 `pyinstaller --onefile --name coach-potato --add-data "static:static"
-desktop.py`, or download per-OS binaries from the **Build desktop binaries**
+--add-data "VERSION:." desktop.py`, or download per-OS binaries from the **Build desktop binaries**
 GitHub Actions workflow (runs on tags and manual dispatch).
 
 ## Local setup (development)

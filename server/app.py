@@ -67,6 +67,11 @@ def stat_filters(request: Request):
     }
 
 
+@app.get("/api/version")
+def api_version():
+    return {"version": config.app_version(), "repo": config.GITHUB_REPO}
+
+
 @app.get("/api/settings")
 def api_get_settings():
     conn = get_conn()

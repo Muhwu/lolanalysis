@@ -17,6 +17,15 @@ ENV_FALLBACK_ROOT = PROJECT_ROOT
 
 APP_DIR_NAME = "CoachPotato"
 
+GITHUB_REPO = "Muhwu/coach-potato"
+
+
+def app_version() -> str:
+    try:
+        return (PROJECT_ROOT / "VERSION").read_text().strip()
+    except OSError:
+        return "dev"
+
 
 def default_db_path() -> Path:
     env = os.environ.get("LOL_DB_PATH")

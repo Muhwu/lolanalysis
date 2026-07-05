@@ -19,4 +19,4 @@ artifacts appear per-OS on the run page.
 Local build (current OS only):
 
     pip install pyinstaller pywebview
-    pyinstaller --onefile --name coach-potato --add-data "static:static" desktop.py
+    pyinstaller --onefile --name coach-potato --add-data "static:static" --add-data "VERSION:." desktop.py

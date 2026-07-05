@@ -369,6 +369,12 @@ def test_single_game_metrics_endpoint(client):
         "/api/stats/games/metrics?match_id=EUW1_nope&puuid=x").status_code == 404
 
 
+def test_version_endpoint(client):
+    data = client.get("/api/version").json()
+    assert data["version"].count(".") == 2  # semver from the VERSION file
+    assert data["repo"] == "Muhwu/coach-potato"
+
+
 def test_index_served(client):
     response = client.get("/")
     assert response.status_code == 200
