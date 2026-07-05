@@ -124,12 +124,101 @@ function wrCell(winrate) {
 }
 
 const MATCHUP_HEADER = `<thead><tr>
-  <th>Opponent</th><th>Games</th><th>W–L</th><th class="wr-col">Winrate</th><th>KDA</th>
+  <th></th><th>Opponent</th><th>Games</th><th>W–L</th><th class="wr-col">Winrate</th><th>KDA</th>
   <th>CS/min</th><th>Gold/min</th><th>DMG/min</th><th>Avg length</th>
 </tr></thead>`;
 
+const matchupUi = { expanded: new Set(), cache: new Map(), rows: [],
+                    statsOpen: new Set(), statsCache: new Map() };
+
+function matchupKey(row) {
+  return state.view === "rank" ? `${row.rank_tier}:${row.opp_champion}` : row.opp_champion;
+}
+
+// per-game "standard metrics" panel (same groups as the coaching/blocks views)
+function metricGroupsPanel(data) {
+  if (data === undefined) return `<div class="muted">Loading…</div>`;
+  if (data === null) return `<div class="muted">No detailed metrics recorded for this game.</div>`;
+  const groups = [...new Set(data.meta.map((m) => m.group))];
+  return `<div class="metric-groups">` + groups.map((g) =>
+    `<div class="metric-group"><h4>${g}</h4>` +
+    data.meta.filter((m) => m.group === g).map((m) => `<div class="metric-row">
+        <span class="metric-label">${m.label}</span>
+        <span class="metric-value">${fmtMetric(data.metrics[m.key], m)}</span>
+      </div>`).join("") + `</div>`).join("") + `</div>`;
+}
+
+function matchupGamesTable(key) {
+  const games = matchupUi.cache.get(key);
+  if (!games) return `<div class="muted">Loading…</div>`;
+  if (!games.length) return `<div class="muted">No games.</div>`;
+  const rows = games.map((g) => {
+    const gkey = `${g.match_id}:${g.my_puuid}`;
+    const open = matchupUi.statsOpen.has(gkey);
+    let html = `<tr>
+      <td><button class="preset seg-toggle mg-stats-toggle" data-gkey="${gkey}"
+        data-match="${g.match_id}" data-puuid="${g.my_puuid}" aria-expanded="${open}"
+        title="Per-game stats">${open ? "▾" : "▸"}</button></td>
+      <td>${fmtDate(g.game_creation_ms)}</td>
+      <td>${QUEUE_NAMES[g.queue_id] ?? g.queue_id}</td>
+      <td><span class="champ-cell">${champIcon(g.my_champion)}${displayName(g.my_champion)}</span></td>
+      <td>${g.opp_champion ? titleCase(g.rank_tier) : "–"}</td>
+      <td><span class="result-pill ${g.win ? "win" : "loss"}">${g.win ? "W" : "L"}</span></td>
+      <td>${g.kills}/${g.deaths}/${g.assists}</td>
+      <td>${(g.cs * 60 / g.game_duration_s).toFixed(1)}</td>
+      <td>${fmtDuration(g.game_duration_s)}</td>
+      <td><button class="preset promote-btn" data-match="${g.match_id}"
+        data-puuid="${g.my_puuid}" title="Add to current block">+ Block</button></td>
+    </tr>`;
+    if (open) {
+      html += `<tr class="games-row"><td colspan="10">${metricGroupsPanel(matchupUi.statsCache.get(gkey))}</td></tr>`;
+    }
+    return html;
+  }).join("");
+  return `<table class="games-inner">
+    <thead><tr><th></th><th>Date</th><th>Queue</th><th>Me</th><th>Opp. rank</th>
+    <th>Result</th><th>K/D/A</th><th>CS/min</th><th>Length</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+async function toggleMatchup(row) {
+  const key = matchupKey(row);
+  if (matchupUi.expanded.has(key)) {
+    matchupUi.expanded.delete(key);
+    renderMatchups(matchupUi.rows);
+    return;
+  }
+  matchupUi.expanded.add(key);
+  if (!matchupUi.cache.has(key)) {
+    const params = new URLSearchParams(queryString());
+    params.delete("min_games");
+    params.set("opp_champion", row.opp_champion);
+    if (state.view === "rank") params.set("rank_tier", row.rank_tier);
+    matchupUi.cache.set(key, await getJSON(`/api/stats/games?${params}`));
+  }
+  renderMatchups(matchupUi.rows);
+}
+
+async function toggleMatchupGameStats(gkey, matchId, puuid) {
+  if (matchupUi.statsOpen.has(gkey)) {
+    matchupUi.statsOpen.delete(gkey);
+  } else {
+    matchupUi.statsOpen.add(gkey);
+    if (!matchupUi.statsCache.has(gkey)) {
+      const response = await fetch(
+        `/api/stats/games/metrics?match_id=${encodeURIComponent(matchId)}&puuid=${encodeURIComponent(puuid)}`);
+      matchupUi.statsCache.set(gkey, response.ok ? await response.json() : null);
+    }
+  }
+  renderMatchups(matchupUi.rows);
+}
+
 function matchupRow(row) {
-  return `<tr>
+  const key = matchupKey(row);
+  const expanded = matchupUi.expanded.has(key);
+  let html = `<tr>
+    <td><button class="preset seg-toggle matchup-toggle" data-key="${escapeHtml(key)}"
+      aria-expanded="${expanded}" title="Games in this matchup">${expanded ? "▾" : "▸"}</button></td>
     <td><span class="champ-cell">${champIcon(row.opp_champion)}${displayName(row.opp_champion)}</span></td>
     <td>${row.games}</td>
     <td>${row.wins}–${row.games - row.wins}</td>
@@ -140,9 +229,14 @@ function matchupRow(row) {
     <td>${fmt(row.dmg_min, 0)}</td>
     <td>${fmtDuration(row.avg_duration_s)}</td>
   </tr>`;
+  if (expanded) {
+    html += `<tr class="games-row"><td colspan="10">${matchupGamesTable(key)}</td></tr>`;
+  }
+  return html;
 }
 
 function renderMatchups(rows) {
+  matchupUi.rows = rows;
   const target = $("#matchup-table");
   if (!rows.length) {
     target.innerHTML = `<div class="table-wrap"><div class="empty">No top-lane games match the current filters.</div></div>`;
@@ -158,13 +252,22 @@ function renderMatchups(rows) {
     body = [...groups.entries()].map(([tier, tierRows]) => {
       const games = tierRows.reduce((a, r) => a + r.games, 0);
       const wins = tierRows.reduce((a, r) => a + r.wins, 0);
-      return `<tr class="rank-header"><td colspan="9">${titleCase(tier)} — ${games} games, ${pct(wins / games)} WR</td></tr>`
+      return `<tr class="rank-header"><td colspan="10">${titleCase(tier)} — ${games} games, ${pct(wins / games)} WR</td></tr>`
         + tierRows.map(matchupRow).join("");
     }).join("");
   } else {
     body = rows.map(matchupRow).join("");
   }
   target.innerHTML = `<div class="table-wrap"><table>${MATCHUP_HEADER}<tbody>${body}</tbody></table></div>`;
+  target.querySelectorAll(".matchup-toggle").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const row = rows.find((r) => matchupKey(r) === btn.dataset.key);
+      if (row) toggleMatchup(row);
+    }));
+  target.querySelectorAll(".mg-stats-toggle").forEach((btn) =>
+    btn.addEventListener("click", () =>
+      toggleMatchupGameStats(btn.dataset.gkey, btn.dataset.match, btn.dataset.puuid)));
+  wirePromoteButtons(target);
 }
 
 function renderSummary(s) {
@@ -264,6 +367,11 @@ async function loadFilterOptions() {
 }
 
 async function refresh() {
+  // filters or data changed — cached matchup game lists are stale
+  matchupUi.expanded.clear();
+  matchupUi.cache.clear();
+  matchupUi.statsOpen.clear();
+  matchupUi.statsCache.clear();
   const qs = queryString();
   const matchupsUrl = state.view === "rank"
     ? `/api/stats/matchups_by_rank?${qs}` : `/api/stats/matchups?${qs}`;

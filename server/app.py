@@ -315,15 +315,20 @@ def api_progress(request: Request):
 @app.get("/api/stats/games")
 def api_games(request: Request, from_ms: int | None = None, to_ms: int | None = None):
     params = dict(request.query_params)
+    if from_ms is None and to_ms is None:
+        from_ms, to_ms = parse_time_range(params)  # range=30d / from= / to= also work
     queues = [int(q) for q in request.query_params.getlist("queue")] or None
     conn = get_conn()
     try:
         players = conn.execute(
             "SELECT puuid, game_name FROM players WHERE is_tracked=1").fetchall()
         names = {r["puuid"]: r["game_name"] for r in players}
+        puuids = [params["puuid"]] if params.get("puuid") else list(names)
         games = stats.games_in_range(
-            conn, list(names), from_ms=from_ms, to_ms=to_ms,
-            champion=params.get("champion") or None, queues=queues)
+            conn, puuids, from_ms=from_ms, to_ms=to_ms,
+            champion=params.get("champion") or None, queues=queues,
+            opp_champion=params.get("opp_champion") or None,
+            rank_tier=params.get("rank_tier") or None)
         for game in games:
             game["account"] = names.get(game["my_puuid"], "?")
         return games

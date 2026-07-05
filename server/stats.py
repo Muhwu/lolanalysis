@@ -57,11 +57,14 @@ def _metric_agg_select():
 
 
 def _filtered_base(puuid, from_ms=None, to_ms=None, champion=None, queues=None,
-                   rank_tier=None, require_opponent=True):
+                   rank_tier=None, require_opponent=True, opp_champion=None):
     puuids = [puuid] if isinstance(puuid, str) else list(puuid)
     sql = _BASE.format(puuid_slots=",".join(f":puuid{i}" for i in range(len(puuids))))
     params = {"remake_s": REMAKE_S}
     params.update({f"puuid{i}": p for i, p in enumerate(puuids)})
+    if opp_champion:
+        sql += " AND opp.champion_name = :opp_champion"
+        params["opp_champion"] = opp_champion
     if require_opponent:
         sql += " AND opp.puuid IS NOT NULL"
     if from_ms is not None:
@@ -308,10 +311,12 @@ def block_games_detailed(conn):
     return [dict(r) for r in rows]
 
 
-def games_in_range(conn, puuids, from_ms=None, to_ms=None, champion=None, queues=None):
+def games_in_range(conn, puuids, from_ms=None, to_ms=None, champion=None, queues=None,
+                   opp_champion=None, rank_tier=None):
     """Individual top-lane games for the tracked puuids, newest first."""
     base, params = _filtered_base(puuids, from_ms=from_ms, to_ms=to_ms,
                                   champion=champion, queues=queues,
+                                  rank_tier=rank_tier, opp_champion=opp_champion,
                                   require_opponent=False)
     sql = f"""
         SELECT match_id, game_creation_ms, game_duration_s, queue_id, my_puuid,

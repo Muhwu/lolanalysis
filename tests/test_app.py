@@ -189,6 +189,16 @@ def test_games_endpoint_bounds_and_filters(client):
     assert games[0]["my_champion"] == "Kled"
 
 
+def test_games_endpoint_opponent_puuid_and_date_params(client):
+    games = client.get("/api/stats/games?opp_champion=Darius").json()
+    assert games and all(g["opp_champion"] == "Darius" for g in games)
+    games = client.get(f"/api/stats/games?puuid={ME}").json()
+    assert games and all(g["my_puuid"] == ME for g in games)
+    assert client.get("/api/stats/games?range=7d").json() == []  # fixtures are old
+    games = client.get("/api/stats/games?from=2023-11-01&to=2023-11-30").json()
+    assert len(games) == 2
+
+
 def test_games_endpoint_rejects_bad_bounds(client):
     assert client.get("/api/stats/games?from_ms=yesterday").status_code == 422
 

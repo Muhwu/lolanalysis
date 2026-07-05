@@ -15,16 +15,16 @@
     <button id="nav-progress" role="tab">Coaching progress</button>
     <button id="nav-trends" role="tab">Trends</button>
     <button id="nav-blocks" role="tab">Blocks</button>
-    <button id="nav-settings" role="tab" title="Settings" aria-label="Settings">⚙</button>
   </div>
   <nav id="account-tabs" aria-label="Accounts"></nav>
   <div class="crawl-box">
-    <button id="crawl-btn">Update data</button>
+    <span id="crawl-status" class="muted"></span>
     <span id="crawl-indicator" class="hidden">
       <span class="spinner" role="status" aria-label="Updating match data"></span>
       <button id="rate-warn" class="rate-warn hidden" aria-label="Why is this slow?">!</button>
     </span>
-    <span id="crawl-status" class="muted"></span>
+    <button id="crawl-btn" title="Update data now" aria-label="Update data now">⟳</button>
+    <button id="nav-settings" class="preset icon-btn" title="Settings" aria-label="Settings">⚙</button>
   </div>
 </header>
 

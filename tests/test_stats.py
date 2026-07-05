@@ -271,6 +271,16 @@ def test_games_in_range_filters_and_remakes(conn):
     assert [g["opp_champion"] for g in games] == ["Darius"]
 
 
+def test_games_in_range_filters_by_opponent_and_rank(conn):
+    add_match(conn, when=1_000, opp_champ="Darius")
+    _, opp = add_match(conn, when=2_000, opp_champ="Teemo")
+    db.set_player_rank(conn, opp, "GOLD", "I", 1, fetched_at_ms=1)
+    games = stats.games_in_range(conn, [ME], opp_champion="Darius")
+    assert [g["opp_champion"] for g in games] == ["Darius"]
+    games = stats.games_in_range(conn, [ME], rank_tier="GOLD")
+    assert [g["opp_champion"] for g in games] == ["Teemo"]
+
+
 def test_games_in_range_lists_game_without_top_opponent(conn):
     add_match(conn, when=1_000, opp_pos="JUNGLE", opp_champ="Wukong")
     games = stats.games_in_range(conn, [ME])

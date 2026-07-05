@@ -76,10 +76,14 @@ header {
   background: var(--series-1);
   color: #fff;
   border-radius: 8px;
-  padding: 6px 14px;
+  padding: 4px 10px;
   cursor: pointer;
   font: inherit;
+  font-size: 17px;
+  line-height: 1.2;
 }
+#nav-settings { font-size: 15px; padding: 4px 10px; }
+#nav-settings.active { background: var(--accent-wash); border-color: var(--series-1); }
 #crawl-btn:disabled { opacity: 0.55; cursor: default; }
 #crawl-indicator { display: inline-flex; align-items: center; gap: 6px; }
 .spinner {
