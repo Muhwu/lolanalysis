@@ -156,7 +156,15 @@ select, input[type="date"], input[type="number"] {
 .tile .value { font-size: 26px; font-weight: 650; margin-top: 2px; }
 .tile .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
-.section-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.section-head h2 { margin-bottom: 0; }
+.head-actions { gap: 10px; padding: 2px 0; }
 .view-toggle button {
   border: 1px solid var(--border);
   background: transparent;
