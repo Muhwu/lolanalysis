@@ -19,6 +19,8 @@ const muState = {
   expanded: new Set(),
   tab: new Map(),       // matchup key -> "overview" | "games"
   games: new Map(),     // matchup key -> games list
+  blockNotes: new Map(),    // opp_champion -> block-game notes (all my picks)
+  blockNotesAll: new Set(), // matchup keys with "all my picks" checked
   statsOpen: new Set(),
   statsCache: new Map(),
 };
@@ -80,6 +82,7 @@ async function loadMatchupFilterOptions() {
 async function loadMatchups() {
   // filters, account or data changed — cached game lists are stale
   muState.games.clear();
+  muState.blockNotes.clear();
   muState.statsOpen.clear();
   muState.statsCache.clear();
   muState.editingNotes = null;
@@ -91,9 +94,13 @@ async function loadMatchups() {
   // re-hydrate games for anything the user had expanded
   const open = muState.rows.filter((r) => muState.expanded.has(muKey(r)));
   if (open.length) {
-    await Promise.all(open.map((r) => ensureMatchupGames(r)));
+    await Promise.all(open.map((r) => ensureMatchupDetails(r)));
     renderMU(muState.rows);
   }
+}
+
+async function ensureMatchupDetails(row) {
+  await Promise.all([ensureMatchupGames(row), ensureBlockNotes(row)]);
 }
 
 async function ensureMatchupGames(row) {
@@ -104,6 +111,12 @@ async function ensureMatchupGames(row) {
   params.set("opp_champion", row.opp_champion);
   if (muState.view === "rank") params.set("rank_tier", row.rank_tier);
   muState.games.set(key, await getJSON(`/api/stats/games?${params}`));
+}
+
+async function ensureBlockNotes(row) {
+  if (muState.blockNotes.has(row.opp_champion)) return;
+  muState.blockNotes.set(row.opp_champion, await getJSON(
+    `/api/blocks/game-notes?opp_champion=${encodeURIComponent(row.opp_champion)}`));
 }
 
 // ---------- expansion panel ----------
@@ -220,6 +233,38 @@ function matchupNotesBlock(row) {
     </div>${body}</div>`;
 }
 
+function blockNotesBlock(row) {
+  const key = muKey(row);
+  const all = muState.blockNotes.get(row.opp_champion);
+  if (!all) return `<div class="mu-block-notes"><h4>Block notes</h4>
+    <div class="muted">Loading…</div></div>`;
+  const showAll = muState.blockNotesAll.has(key) || !muState.champion;
+  const notes = showAll ? all : all.filter((n) => n.my_champion === muState.champion);
+  const checkbox = muState.champion
+    ? `<label class="muted bn-all-label"><input type="checkbox" class="bn-all"
+        data-key="${escapeHtml(key)}" ${muState.blockNotesAll.has(key) ? "checked" : ""}>
+        all my picks vs ${displayName(row.opp_champion)}</label>`
+    : "";
+  const items = notes.map((n) => {
+    const title = n.block_title ? ` — ${escapeHtml(n.block_title)}` : "";
+    return `<div class="bn-item">
+      <div class="muted bn-meta">
+        <a href="#blocks" class="bn-block-link" data-block="${n.block_id}"
+          title="Open this block">Block #${n.block_id}${title}</a>
+        · ${fmtDate(n.game_creation_ms)} · ${escapeHtml(n.account)} ·
+        ${displayName(n.my_champion)} vs ${displayName(n.opp_champion)} ·
+        <span class="result-pill ${n.win ? "win" : "loss"}">${n.win ? "W" : "L"}</span>
+      </div>
+      <div class="bn-text">${escapeHtml(n.notes)}</div>
+    </div>`;
+  }).join("");
+  const empty = `<div class="muted">No block notes ${showAll ? "" : `with ${displayName(muState.champion)} `}vs ${displayName(row.opp_champion)} yet.</div>`;
+  return `<div class="mu-block-notes">
+    <div class="mu-notes-head"><h4>Block notes</h4>${checkbox}</div>
+    ${notes.length ? items : empty}
+  </div>`;
+}
+
 function matchupGamesTable(key) {
   const games = muState.games.get(key);
   if (!games) return `<div class="muted">Loading…</div>`;
@@ -260,7 +305,7 @@ function matchupPanel(row) {
   const body = tab === "games"
     ? matchupGamesTable(key)
     : `<div class="mu-overview-grid">
-        <div>${matchupNotesBlock(row)}</div>
+        <div>${matchupNotesBlock(row)}${blockNotesBlock(row)}</div>
         <div>${winLossStrip(games, key)}${laneTrendGraph(games)}</div>
       </div>`;
   return `<div class="mu-panel">
@@ -345,9 +390,20 @@ function wireMUHandlers(target) {
         muState.expanded.add(key);
         const row = rowFor(key);
         renderMU(muState.rows); // show "Loading…" immediately
-        if (row) await ensureMatchupGames(row);
+        if (row) await ensureMatchupDetails(row);
       }
       renderMU(muState.rows);
+    }));
+  target.querySelectorAll(".bn-all").forEach((cb) =>
+    cb.addEventListener("change", () => {
+      cb.checked ? muState.blockNotesAll.add(cb.dataset.key)
+                 : muState.blockNotesAll.delete(cb.dataset.key);
+      renderMU(muState.rows);
+    }));
+  target.querySelectorAll(".bn-block-link").forEach((a) =>
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      focusBlock(+a.dataset.block);
     }));
   target.querySelectorAll(".mu-tab").forEach((btn) =>
     btn.addEventListener("click", () => {

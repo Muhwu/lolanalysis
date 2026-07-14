@@ -97,8 +97,11 @@ change, not a crawler change.
   = newest; complete = ≥3 games (derived, `db.BLOCK_SIZE`);
   `db.add_game_to_block` auto-advances. Hydration via
   `stats.block_games_detailed`. API: `/api/pool`, `/api/blocks`,
-  `POST /api/blocks/games` (409 names holding block). UI in `blocks.js`;
-  "+ Block" promote buttons on Recent-games and segment game rows.
+  `POST /api/blocks/games` (409 names holding block),
+  `GET /api/blocks/game-notes?opp_champion=` (read-only; feeds the matchup
+  Block-notes section, `focusBlock(id)` in `blocks.js` deep-links a block
+  card). UI in `blocks.js`; "+ Block" promote buttons on Recent-games and
+  segment game rows.
 - `static/` — no build step; state + fetch + innerHTML render in `app.js`;
   matchups view (own tab: per-matchup notes, expanded rows with Overview
   [win/loss strip + notes] / Games tabs) in `matchups.js`;

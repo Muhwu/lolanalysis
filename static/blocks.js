@@ -9,7 +9,16 @@ const blockState = {
   collapsed: new Set(JSON.parse(localStorage.getItem("cp-collapsed-blocks") || "[]")),
   expandedGameStats: new Set(),
   gameMetricsCache: new Map(),
+  focusId: null, // block to scroll to + highlight after the next render
 };
+
+function focusBlock(blockId) {
+  // deep-link from other views (e.g. matchup block notes)
+  blockState.focusId = blockId;
+  blockState.collapsed.delete(blockId);
+  persistCollapsed();
+  setMainView("blocks");
+}
 
 function persistCollapsed() {
   localStorage.setItem("cp-collapsed-blocks", JSON.stringify([...blockState.collapsed]));
@@ -218,6 +227,15 @@ async function loadBlocks() {
   blockState.blocks = data.blocks;
   blockState.blockSize = data.block_size;
   renderBlocks();
+  if (blockState.focusId != null) {
+    const card = $(`#block-card-${blockState.focusId}`);
+    blockState.focusId = null;
+    if (card) {
+      card.scrollIntoView({ block: "start", behavior: "smooth" });
+      card.classList.add("block-flash");
+      setTimeout(() => card.classList.remove("block-flash"), 2000);
+    }
+  }
   await renderBlockPicker();
 }
 
@@ -360,13 +378,13 @@ function blockCard(block, isCurrent) {
       </span>
     </div>`;
   if (collapsed) {
-    return `<div class="session-card block-card">${head}</div>`;
+    return `<div class="session-card block-card" id="block-card-${block.id}">${head}</div>`;
   }
   const headerCells = GAME_COL_KEYS.filter((k) => blockCols.has(k)).map((k) => {
     const label = BLOCK_COLS.find((c) => c.key === k).label;
     return `<th${k === "notes" ? ' class="notes-col"' : ""}>${label}</th>`;
   }).join("");
-  return `<div class="session-card block-card">
+  return `<div class="session-card block-card" id="block-card-${block.id}">
     ${head}
     ${blockPoolChips(block.pool)}
     ${blockRankLine(block)}

@@ -570,3 +570,28 @@ def test_hide_my_rank_redacts_all_endpoints(client):
     assert client.get("/api/players").json()[0]["solo_tier"] == "GOLD"
     assert client.get("/api/sessions").json()[0]["start_ranks"] is not None
     assert client.get("/api/stats/rank-history").json()["series"][0]["points"] != []
+
+
+def test_block_game_notes_endpoint(client):
+    import os
+    conn = db.connect(os.environ["LOL_DB_PATH"])
+    # the fixture's two Garen-vs-Darius games go into a block, one with notes
+    m1, m2 = [r["match_id"] for r in conn.execute(
+        """SELECT p.match_id FROM participants p
+           JOIN matches m ON m.match_id = p.match_id
+           WHERE p.puuid=? AND p.champion_name='Garen'
+           ORDER BY m.game_creation_ms""", (ME,))]
+    db.add_game_to_block(conn, m1, ME)
+    db.add_game_to_block(conn, m2, ME)
+    entry = conn.execute("SELECT id FROM block_games WHERE match_id=?", (m1,)).fetchone()
+    db.update_block_game(conn, entry["id"], "punished his E cooldown")
+    db.update_block(conn, 1, title="lane control")
+    conn.close()
+    notes = client.get("/api/blocks/game-notes?opp_champion=Darius").json()
+    assert len(notes) == 1  # the note-less game is skipped
+    n = notes[0]
+    assert n["notes"] == "punished his E cooldown"
+    assert n["block_id"] == 1 and n["block_title"] == "lane control"
+    assert n["my_champion"] == "Garen" and n["opp_champion"] == "Darius"
+    assert n["match_id"] == m1 and n["account"] == "PlayerOne"
+    assert client.get("/api/blocks/game-notes?opp_champion=Teemo").json() == []

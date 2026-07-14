@@ -626,6 +626,36 @@ def api_blocks_export_csv(block_id: int | None = None):
     )
 
 
+@app.get("/api/blocks/game-notes")
+def api_block_game_notes(opp_champion: str):
+    """Read-only: block-game notes from games against the given champion,
+    newest first (my champion is filtered client-side)."""
+    if not opp_champion:
+        raise HTTPException(400, "opp_champion query param required")
+    conn = get_conn()
+    try:
+        titles = {b["id"]: b["title"] for b in db.list_blocks(conn)}
+        names = {r["puuid"]: r["game_name"] for r in
+                 conn.execute("SELECT puuid, game_name FROM players WHERE is_tracked=1")}
+        notes = [{
+            "block_id": g["block_id"],
+            "block_title": titles.get(g["block_id"], ""),
+            "match_id": g["match_id"],
+            "puuid": g["puuid"],
+            "account": names.get(g["puuid"], "?"),
+            "game_creation_ms": g["game_creation_ms"],
+            "my_champion": g["my_champion"],
+            "opp_champion": g["opp_champion"],
+            "win": g["win"],
+            "notes": g["notes"],
+        } for g in stats.block_games_detailed(conn)
+            if g["opp_champion"] == opp_champion and g["notes"].strip()]
+        notes.reverse()  # block_games_detailed is oldest first
+        return notes
+    finally:
+        conn.close()
+
+
 @app.post("/api/blocks/games")
 def api_add_block_game(body: dict):
     match_id = (body or {}).get("match_id")
