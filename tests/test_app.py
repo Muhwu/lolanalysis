@@ -533,3 +533,40 @@ def test_matchup_notes_endpoints(client):
     assert client.put("/api/matchups/notes/NotAChamp",
                       json={"notes": "x"}).status_code == 400
     assert client.put("/api/matchups/notes/Darius", json={}).status_code == 400
+
+
+def _put_settings(client, **extra):
+    return client.put("/api/settings", json={
+        "riot_api_key": "k", "accounts": ["A#B"], "platform": "euw1", **extra})
+
+
+def test_hide_my_rank_setting_round_trip(client):
+    assert client.get("/api/settings").json()["hide_my_rank"] is False
+    assert _put_settings(client, hide_my_rank=True).status_code == 200
+    assert client.get("/api/settings").json()["hide_my_rank"] is True
+    assert _put_settings(client, hide_my_rank="yes").status_code == 400
+
+
+def test_hide_my_rank_redacts_all_endpoints(client):
+    import os
+    conn = db.connect(os.environ["LOL_DB_PATH"])
+    conn.execute("UPDATE players SET solo_tier='GOLD', solo_division='II', solo_lp=40,"
+                 " rank_fetched_at_ms=1000 WHERE puuid=?", (ME,))
+    conn.commit()
+    db.record_rank_history(conn, ME, "GOLD", "II", 40, 1_700_000_000_000)
+    db.add_session(conn, "2026-07-01", "t")  # captures start_ranks
+    conn.close()
+    assert _put_settings(client, hide_my_rank=True).status_code == 200
+
+    player = client.get("/api/players").json()[0]
+    assert player["solo_tier"] is None and player["solo_lp"] is None
+    assert client.get("/api/sessions").json()[0]["start_ranks"] is None
+    history = client.get("/api/stats/rank-history").json()
+    assert history["series"][0]["points"] == []
+    segments = client.get("/api/stats/progress").json()
+    assert all(s["start_ranks"] is None for s in segments)
+
+    assert _put_settings(client, hide_my_rank=False).status_code == 200
+    assert client.get("/api/players").json()[0]["solo_tier"] == "GOLD"
+    assert client.get("/api/sessions").json()[0]["start_ranks"] is not None
+    assert client.get("/api/stats/rank-history").json()["series"][0]["points"] != []

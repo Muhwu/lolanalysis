@@ -105,7 +105,45 @@ def _extra_settings(conn):
         "hidden_views": _hidden_views(conn),
         "auto_crawl_hours": int(hours) if hours is not None else DEFAULT_AUTO_CRAWL_HOURS,
         "last_crawl_ms": int(last) if last else None,
+        "hide_my_rank": stored.get("hide_my_rank") == "1",
     }
+
+
+def _hide_my_rank(conn):
+    return db.get_settings(conn).get("hide_my_rank") == "1"
+
+
+# Own-rank data is nulled at the API boundary when "Hide my rank / LP" is on,
+# so every view — including future ones — hides it without its own logic.
+# Snapshots keep being recorded; turning the setting off restores everything.
+_MY_RANK_KEYS = {"solo_tier", "solo_division", "solo_lp", "start_ranks", "end_ranks"}
+
+
+def _scrub_my_ranks(value):
+    if isinstance(value, dict):
+        return {k: (None if k in _MY_RANK_KEYS else _scrub_my_ranks(v))
+                for k, v in value.items()}
+    if isinstance(value, list):
+        return [_scrub_my_ranks(v) for v in value]
+    return value
+
+
+@app.middleware("http")
+async def redact_my_rank(request: Request, call_next):
+    response = await call_next(request)
+    if (not request.url.path.startswith("/api")
+            or "application/json" not in response.headers.get("content-type", "")):
+        return response
+    conn = get_conn()
+    try:
+        hidden = _hide_my_rank(conn)
+    finally:
+        conn.close()
+    if not hidden:
+        return response
+    body = b"".join([chunk async for chunk in response.body_iterator])
+    return JSONResponse(_scrub_my_ranks(json.loads(body)),
+                        status_code=response.status_code)
 
 
 @app.get("/api/settings")
@@ -144,6 +182,9 @@ def api_put_settings(body: dict):
     hours = body.get("auto_crawl_hours", DEFAULT_AUTO_CRAWL_HOURS)
     if not isinstance(hours, int) or isinstance(hours, bool) or hours < 0:
         raise HTTPException(400, "auto_crawl_hours must be a non-negative whole number")
+    hide_my_rank = body.get("hide_my_rank", False)
+    if not isinstance(hide_my_rank, bool):
+        raise HTTPException(400, "hide_my_rank must be a boolean")
     conn = get_conn()
     try:
         db.set_settings(conn, {
@@ -152,6 +193,7 @@ def api_put_settings(body: dict):
             "platform": platform,
             "hidden_views": json.dumps(hidden_views),
             "auto_crawl_hours": str(hours),
+            "hide_my_rank": "1" if hide_my_rank else "0",
         })
         settings = config.resolve_settings(conn)
         settings["platforms"] = sorted(PLATFORM_ROUTING)
@@ -416,7 +458,8 @@ def api_rank_history():
         players = conn.execute(
             """SELECT puuid, game_name, tag_line FROM players
                WHERE is_tracked=1 ORDER BY game_name""").fetchall()
-        history = stats.rank_history(conn, [p["puuid"] for p in players])
+        history = ({} if _hide_my_rank(conn)
+                   else stats.rank_history(conn, [p["puuid"] for p in players]))
         return {
             "series": [{"puuid": p["puuid"],
                         "account": f"{p['game_name']}#{p['tag_line']}",

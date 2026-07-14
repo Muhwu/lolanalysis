@@ -63,7 +63,11 @@ change, not a crawler change.
   (<300 s) excluded; opponent rank bucket `UNKNOWN` when not fetched.
 - `server/app.py` — FastAPI; per-request sqlite connections; crawl runs in a
   daemon thread with module-level `CRAWL_STATE`; db path override via
-  `LOL_DB_PATH` env (used by tests). Session CRUD at `/api/sessions`;
+  `LOL_DB_PATH` env (used by tests). "Hide my rank / LP" setting
+  (`hide_my_rank`) redacts own-rank fields (`_MY_RANK_KEYS`) from ALL JSON
+  API responses via middleware — new endpoints get hiding for free as long as
+  they reuse those key names (`solo_*`, `start_ranks`, `end_ranks`); anything
+  else rank-shaped needs its own check (see the rank-history endpoint). Session CRUD at `/api/sessions`;
   `/api/stats/progress` aggregates across ALL tracked puuids (no puuid param).
 - Sessions have `title` + Markdown `notes` (legacy `note` column auto-migrates
   in `db._migrate`). `PATCH /api/sessions/{id}` edits them;

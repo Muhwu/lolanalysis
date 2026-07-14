@@ -137,7 +137,8 @@ function metricGroupsPanel(data) {
 
 function renderSummary(s) {
   const player = state.players.find((p) => p.puuid === state.puuid);
-  const rank = player && player.solo_tier
+  const rank = state.hideMyRank ? "Hidden"
+    : player && player.solo_tier
     ? `${titleCase(player.solo_tier)} ${player.solo_division ?? ""} ${player.solo_lp ?? 0} LP`
     : "Unranked / unknown";
   $("#summary-tiles").innerHTML = `
@@ -195,6 +196,8 @@ function renderRankChart() {
   const data = state.rankHistory;
   const target = $("#rank-chart");
   const legend = $("#rank-legend");
+  $("#rank-section").classList.toggle("hidden", Boolean(state.hideMyRank));
+  if (state.hideMyRank) return;
   if (!data || !data.series.some((s) => s.points.length)) {
     legend.innerHTML = "";
     target.innerHTML = `<div class="table-wrap"><div class="empty">
@@ -835,6 +838,7 @@ async function initSettings() {
     cb.checked = !(data.hidden_views || []).includes(cb.value);
   });
   $("#setting-auto-crawl").value = data.auto_crawl_hours;
+  $("#setting-hide-rank").checked = Boolean(data.hide_my_rank);
   $("#settings-banner").classList.toggle("hidden", data.configured);
   if (settingsUi.wired) return;
   settingsUi.wired = true;
@@ -880,10 +884,15 @@ async function initSettings() {
         platform: $("#setting-platform").value,
         hidden_views: hiddenViews,
         auto_crawl_hours: Math.max(0, parseInt($("#setting-auto-crawl").value, 10) || 0),
+        hide_my_rank: $("#setting-hide-rank").checked,
       }),
     });
     const body = await response.json().catch(() => ({}));
     if (response.ok) {
+      if (Boolean(state.hideMyRank) !== Boolean(body.hide_my_rank)) {
+        state.hideMyRank = body.hide_my_rank;
+        init(false); // re-pull data so the redaction change applies everywhere
+      }
       applyHiddenViews(body.hidden_views);
       $("#settings-banner").classList.add("hidden");
       if (settingsUi.wasUnconfigured && body.configured) {
@@ -1097,6 +1106,7 @@ async function init(firstLoad = true) {
     pollCrawl();
     checkForUpdates();
     const settings = await getJSON("/api/settings");
+    state.hideMyRank = settings.hide_my_rank;
     applyHiddenViews(settings.hidden_views);
     maybeStartupCrawl(settings);
     setInterval(autoCrawlTick, 10 * 60 * 1000);
