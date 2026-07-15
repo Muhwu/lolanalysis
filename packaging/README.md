@@ -20,3 +20,11 @@ Local build (current OS only):
 
     pip install pyinstaller pywebview
     pyinstaller --onefile --name coach-potato --add-data "static:static" --add-data "VERSION:." desktop.py
+
+On Windows and macOS, add `--windowed` (a.k.a. `--noconsole`) or the app
+launches with a console/Terminal window alongside the pywebview window.
+`--windowed` is ignored on Linux — PyInstaller has no console concept there.
+On macOS, `--windowed` changes the output from a flat `dist/coach-potato`
+binary to a proper `dist/coach-potato.app` bundle (the CI workflow zips this
+with `ditto` before uploading) — ship the `.app`, not the binary inside it,
+or double-clicking will still open Terminal.

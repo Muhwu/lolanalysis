@@ -18,7 +18,7 @@ jobs:
             binary: dist/coach-potato.exe
           - os: macos-latest
             artifact: coach-potato-macos
-            binary: dist/coach-potato
+            binary: dist/coach-potato-macos.zip
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -35,10 +35,20 @@ jobs:
         shell: bash
         run: |
           ICON=""
-          [[ "${{ matrix.os }}" == windows-latest ]] && ICON="--icon assets/icon.ico"
-          [[ "${{ matrix.os }}" == macos-latest ]] && ICON="--icon assets/icon.icns"
+          WINDOWED=""
+          # --windowed suppresses the console/Terminal window that would
+          # otherwise pop up alongside the pywebview app window; ignored on
+          # Linux (PyInstaller has no console concept there). On macOS it
+          # also switches the output from a flat binary to a proper .app
+          # bundle, which is what makes double-click-to-launch not open
+          # Terminal in the first place.
+          [[ "${{ matrix.os }}" == windows-latest ]] && ICON="--icon assets/icon.ico" && WINDOWED="--windowed"
+          [[ "${{ matrix.os }}" == macos-latest ]] && ICON="--icon assets/icon.icns" && WINDOWED="--windowed"
           pyinstaller --onefile --noconfirm --name coach-potato \
-            --add-data "static:static" --add-data "VERSION:." $ICON desktop.py
+            --add-data "static:static" --add-data "VERSION:." $ICON $WINDOWED desktop.py
+      - name: Package macOS app bundle
+        if: matrix.os == 'macos-latest'
+        run: ditto -c -k --sequesterRsrc --keepParent dist/coach-potato.app dist/coach-potato-macos.zip
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
@@ -51,6 +61,7 @@ jobs:
         run: |
           EXT=""
           [[ "${{ matrix.binary }}" == *.exe ]] && EXT=".exe"
+          [[ "${{ matrix.binary }}" == *.zip ]] && EXT=".zip"
           OUT="${{ matrix.artifact }}${EXT}"
           cp "${{ matrix.binary }}" "$OUT"
           gh release create "$GITHUB_REF_NAME" --generate-notes 2>/dev/null || true
