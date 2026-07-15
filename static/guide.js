@@ -21,6 +21,7 @@ const guideState = {
   matchups: [],   // stats rows for myChampion: {opp_champion, games, winrate, ...}
   guide: {},      // opp_champion -> {notes, runes: [rune page, ...], patch_version}
   games: new Map(), // opp_champion -> recent games list (each may carry a "runes" field)
+  expanded: new Set(), // opp_champions currently expanded (collapsed by default)
   editing: null,  // opp_champion whose editor is open
   draft: null,    // working copy of the guide being edited: {notes, patch_version, runes}
   openRuneIndex: null, // index into draft.runes currently expanded in the picker
@@ -95,8 +96,11 @@ async function initGuide() {
   await Promise.all([loadGuideChampionOptions(), loadRuneTrees()]);
   await loadGuide();
   if (guideState.pendingFocus) {
-    addOrFocusMatchup(guideState.pendingFocus);
+    const champ = guideState.pendingFocus;
     guideState.pendingFocus = null;
+    addOrFocusMatchup(champ);
+    renderGuide();
+    await ensureMatchupGames(champ);
     renderGuide();
   }
 }
@@ -118,6 +122,8 @@ async function loadGuideChampionOptions() {
 }
 
 async function loadGuide() {
+  guideState.games = new Map();
+  guideState.expanded = new Set();
   if (!guideState.myChampion) {
     guideState.matchups = [];
     guideState.guide = {};
@@ -134,22 +140,22 @@ async function loadGuide() {
   guideState.matchups = matchups;
   guideState.guide = guide;
   guideState.generalNotes = general.notes;
-  guideState.games = new Map();
   renderGuide();
   renderGuideGeneral();
-  // hydrate each played matchup's recent games (shown in the right column)
-  // after the first paint so the page isn't blocked on N game-list fetches
-  const played = matchups.filter((m) => m.games > 0);
-  if (played.length) {
-    const results = await Promise.all(played.map((m) =>
-      getJSON(`/api/stats/games?${accountParams()}&champion=${encodeURIComponent(guideState.myChampion)}` +
-        `&opp_champion=${encodeURIComponent(m.opp_champion)}`)));
-    played.forEach((m, i) => guideState.games.set(m.opp_champion, results[i]));
-    renderGuide();
-  }
 }
 
-function addGuideMatchup() {
+// fetch a matchup's recent games on first expand only (collapsed rows never
+// pay for this — see .guide-toggle in wireGuideHandlers)
+async function ensureMatchupGames(champ) {
+  if (guideState.games.has(champ)) return;
+  const m = guideState.matchups.find((x) => x.opp_champion === champ);
+  if (!m || m.games <= 0) return;
+  const games = await getJSON(`/api/stats/games?${accountParams()}` +
+    `&champion=${encodeURIComponent(guideState.myChampion)}&opp_champion=${encodeURIComponent(champ)}`);
+  guideState.games.set(champ, games);
+}
+
+async function addGuideMatchup() {
   const typed = $("#guide-add-input").value.trim();
   if (!typed) return;
   const champ = roster.byLookup.get(typed.toLowerCase());
@@ -161,16 +167,20 @@ function addGuideMatchup() {
   $("#guide-add-status").textContent = "";
   addOrFocusMatchup(champ);
   renderGuide();
+  await ensureMatchupGames(champ);
+  renderGuide();
 }
 
 function addOrFocusMatchup(champ) {
   if (!guideState.matchups.some((m) => m.opp_champion === champ)) {
     guideState.matchups.push({ opp_champion: champ, games: 0, winrate: null, added: true });
   }
+  guideState.expanded.add(champ);
   startEditing(champ);
 }
 
 function startEditing(champ) {
+  guideState.expanded.add(champ);
   guideState.editing = champ;
   guideState.draft = guideFor(champ);
   guideState.draft.runes = guideState.draft.runes.map((p) => ({ ...emptyRunePage(), ...p }));
@@ -343,10 +353,24 @@ function runePagesDisplay(runes) {
 
 function guideRow(m) {
   const champ = m.opp_champion;
+  const expanded = guideState.expanded.has(champ);
   const editing = guideState.editing === champ;
   const statLine = m.games
     ? `<span class="muted guide-stat">${m.games} games · ${wrCell(m.winrate)}</span>`
     : `<span class="muted guide-stat">Not played yet</span>`;
+  const toggleBtn = `<button class="preset seg-toggle guide-toggle" data-opp="${escapeHtml(champ)}"
+      aria-expanded="${expanded}" title="${expanded ? "Collapse" : "Expand"} matchup">${expanded ? "▾" : "▸"}</button>`;
+  if (!expanded) {
+    const hasGuide = Boolean(guideState.guide[champ]);
+    return `<div class="mu-notes mu-guide guide-row guide-row-collapsed" data-opp="${escapeHtml(champ)}">
+      <div class="mu-notes-head">
+        ${toggleBtn}
+        <h4>${champIcon(champ)}${displayName(champ)}</h4>
+        ${hasGuide ? `<span class="note-flag" title="Has champ guide">📝</span>` : ""}
+        ${statLine}
+      </div>
+    </div>`;
+  }
   let body;
   if (editing) {
     const draft = guideState.draft;
@@ -374,6 +398,7 @@ function guideRow(m) {
     ? `<div class="guide-row-side">${recentGamesColumn(champ)}</div>` : "";
   return `<div class="mu-notes mu-guide guide-row" data-opp="${escapeHtml(champ)}">
     <div class="mu-notes-head">
+      ${toggleBtn}
       <h4>${champIcon(champ)}${displayName(champ)}</h4>
       ${statLine}
       ${editing ? "" : `<button class="preset icon-btn guide-edit" data-opp="${escapeHtml(champ)}"
@@ -436,8 +461,27 @@ function renderGuide() {
 // ---------- event wiring ----------
 
 function wireGuideHandlers(target) {
+  target.querySelectorAll(".guide-toggle").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const champ = btn.dataset.opp;
+      if (guideState.expanded.has(champ)) {
+        guideState.expanded.delete(champ);
+        if (guideState.editing === champ) guideState.editing = null;
+        renderGuide();
+        return;
+      }
+      guideState.expanded.add(champ);
+      renderGuide(); // show "Loading…" immediately
+      await ensureMatchupGames(champ);
+      renderGuide();
+    }));
   target.querySelectorAll(".guide-edit").forEach((btn) =>
-    btn.addEventListener("click", () => { startEditing(btn.dataset.opp); renderGuide(); }));
+    btn.addEventListener("click", async () => {
+      startEditing(btn.dataset.opp);
+      renderGuide();
+      await ensureMatchupGames(btn.dataset.opp);
+      renderGuide();
+    }));
   target.querySelectorAll(".guide-cancel").forEach((btn) =>
     btn.addEventListener("click", () => {
       guideState.editing = null;

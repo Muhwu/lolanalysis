@@ -717,8 +717,10 @@ td.rank-cell { font-size: 12px; line-height: 1.5; }
   border-bottom: 1px solid var(--grid);
 }
 #guide-list .guide-row:last-child { border-bottom: none; }
+#guide-list .guide-row-collapsed { margin: 0; padding: 4px 0; }
 #guide-list .mu-notes-head h4 { display: flex; align-items: center; gap: 6px; }
 .guide-stat { margin-left: auto; font-size: 12px; }
+.guide-toggle { margin-right: 2px; }
 .guide-row-grid {
   display: grid; grid-template-columns: minmax(280px, 1fr) minmax(260px, 340px);
   gap: 20px; align-items: start; margin-top: 8px;

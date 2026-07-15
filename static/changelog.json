@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "version": "1.17.0",
+      "date": "2026-07-15",
+      "items": [
+        "Champ guide matchups are collapsed by default — click a matchup to expand its notes, runes, and recent games, instead of everything loading open at once",
+        "Recent games now only fetch when you expand a matchup, not for every matchup up front"
+      ]
+    },
+    {
       "version": "1.16.1",
       "date": "2026-07-15",
       "items": [
