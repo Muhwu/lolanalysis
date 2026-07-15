@@ -26,7 +26,13 @@ change, not a crawler change.
   `config.default_db_path()`: LOL_DB_PATH → env; frozen → OS app-data dir;
   else `data/lol.sqlite`. `desktop.py` + PyInstaller (`--add-data
   static:static`) produce the packaged build; CI matrix in
-  `.github/workflows/build.yml`.
+  `.github/workflows/build.yml`. `desktop.py` redirects `sys.stdout`/
+  `stderr` to `os.devnull` when they're `None` (before importing uvicorn) —
+  a `--windowed` build has no console on Windows, so those streams are
+  `None`, and uvicorn's logging setup crashes calling `.isatty()` on `None`
+  before the app window ever opens. Any future PyInstaller/`--windowed`
+  build issue that looks like a startup crash touching logging/stdout is
+  probably this same class of bug.
 
 - **Dev API key expires every 24 h.** 403 → `ApiKeyExpiredError`. Refresh at
   developer.riotgames.com, update `RIOT_API_KEY=` in `.env` (gitignored).

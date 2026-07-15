@@ -5,10 +5,22 @@ Starts the FastAPI server on a local port, then opens a native window
 (pywebview, when available) or the system browser. Used by the PyInstaller
 build; also runnable directly: python desktop.py
 """
+import os
 import socket
+import sys
 import threading
 import time
 import webbrowser
+
+# PyInstaller's --windowed build (no console attached) leaves sys.stdout/
+# stderr as None on Windows. Anything that touches them — including
+# uvicorn's logging setup, which calls .isatty() on stderr — crashes with
+# AttributeError before the window ever opens. Redirect to a null stream
+# first, before importing/using anything that might write to them.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
 
 import uvicorn
 

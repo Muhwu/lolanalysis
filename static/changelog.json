@@ -1,6 +1,13 @@
 {
   "entries": [
     {
+      "version": "1.19.1",
+      "date": "2026-07-15",
+      "items": [
+        "Fixed the packaged Windows app crashing on launch (AttributeError from uvicorn's logging setup touching a None stderr in the windowed/no-console build)"
+      ]
+    },
+    {
       "version": "1.19.0",
       "date": "2026-07-15",
       "items": [
