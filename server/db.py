@@ -102,12 +102,13 @@ CREATE TABLE IF NOT EXISTS block_games (
 );
 
 CREATE TABLE IF NOT EXISTS matchup_notes (
-    opp_champion TEXT PRIMARY KEY,
+    my_champion TEXT NOT NULL,
+    opp_champion TEXT NOT NULL,
     notes TEXT NOT NULL DEFAULT '',
-    primary_keystone TEXT NOT NULL DEFAULT '',
-    secondary_tree TEXT NOT NULL DEFAULT '',
+    runes TEXT NOT NULL DEFAULT '',
     patch_version TEXT NOT NULL DEFAULT '',
-    updated_at_ms INTEGER
+    updated_at_ms INTEGER,
+    PRIMARY KEY (my_champion, opp_champion)
 );
 
 CREATE TABLE IF NOT EXISTS rank_history (
@@ -166,16 +167,48 @@ def _migrate(conn):
         if "closed_at_ms" not in block_columns:
             conn.execute("ALTER TABLE blocks ADD COLUMN closed_at_ms INTEGER")
     matchup_notes_columns = {r["name"] for r in conn.execute("PRAGMA table_info(matchup_notes)")}
-    if matchup_notes_columns:
-        if "primary_keystone" not in matchup_notes_columns:
+    if matchup_notes_columns and "my_champion" not in matchup_notes_columns:
+        # Pre-v1.14.0 shapes had opp_champion as the sole PK (no per-champion
+        # scoping) and, from v1.13.0 on, separate primary_keystone/
+        # secondary_tree columns instead of a single runes-list JSON blob.
+        # SQLite can't ALTER a primary key, so rebuild the table and copy
+        # rows forward: my_champion='' (the old schema didn't track which
+        # champion notes were written for), old keystone/tree columns folded
+        # into a one-page runes list.
+        has_old_runes = "primary_keystone" in matchup_notes_columns
+        has_patch = "patch_version" in matchup_notes_columns
+        select_cols = "opp_champion, notes, updated_at_ms"
+        if has_old_runes:
+            select_cols += ", primary_keystone, secondary_tree"
+        if has_patch:
+            select_cols += ", patch_version"
+        old_rows = conn.execute(f"SELECT {select_cols} FROM matchup_notes").fetchall()
+        conn.execute("ALTER TABLE matchup_notes RENAME TO matchup_notes_old")
+        conn.execute("""
+            CREATE TABLE matchup_notes (
+                my_champion TEXT NOT NULL,
+                opp_champion TEXT NOT NULL,
+                notes TEXT NOT NULL DEFAULT '',
+                runes TEXT NOT NULL DEFAULT '',
+                patch_version TEXT NOT NULL DEFAULT '',
+                updated_at_ms INTEGER,
+                PRIMARY KEY (my_champion, opp_champion)
+            )""")
+        for row in old_rows:
+            runes_json = ""
+            if has_old_runes and (row["primary_keystone"] or row["secondary_tree"]):
+                runes_json = json.dumps([{
+                    "label": "", "primary_tree": "", "keystone": row["primary_keystone"] or "",
+                    "primary_runes": [], "secondary_tree": row["secondary_tree"] or "",
+                    "secondary_runes": [], "shards": [],
+                }])
             conn.execute(
-                "ALTER TABLE matchup_notes ADD COLUMN primary_keystone TEXT NOT NULL DEFAULT ''")
-        if "secondary_tree" not in matchup_notes_columns:
-            conn.execute(
-                "ALTER TABLE matchup_notes ADD COLUMN secondary_tree TEXT NOT NULL DEFAULT ''")
-        if "patch_version" not in matchup_notes_columns:
-            conn.execute(
-                "ALTER TABLE matchup_notes ADD COLUMN patch_version TEXT NOT NULL DEFAULT ''")
+                """INSERT INTO matchup_notes
+                   (my_champion, opp_champion, notes, runes, patch_version, updated_at_ms)
+                   VALUES ('', ?, ?, ?, ?, ?)""",
+                (row["opp_champion"], row["notes"], runes_json,
+                 row["patch_version"] if has_patch else "", row["updated_at_ms"]))
+        conn.execute("DROP TABLE matchup_notes_old")
     conn.commit()
 
 
@@ -240,39 +273,44 @@ def get_player_rank(conn, puuid):
     return conn.execute("SELECT * FROM player_ranks WHERE puuid=?", (puuid,)).fetchone()
 
 
-def get_matchup_notes(conn):
-    """Champ guide (notes, runes, patch) for every matchup with any field set:
-    {opp_champion: {notes, primary_keystone, secondary_tree, patch_version}}."""
+def get_matchup_notes(conn, my_champion):
+    """Champ guide (notes, rune pages, patch) for every opponent matchup
+    my_champion has any field set for: {opp_champion: {notes, runes: [...],
+    patch_version}}. `runes` is a list — a matchup can carry more than one
+    rune page (e.g. alternatives being tested)."""
     rows = conn.execute(
-        """SELECT opp_champion, notes, primary_keystone, secondary_tree, patch_version
+        """SELECT opp_champion, notes, runes, patch_version
            FROM matchup_notes
-           WHERE notes != '' OR primary_keystone != '' OR secondary_tree != ''
-              OR patch_version != ''""")
+           WHERE my_champion=? AND (notes != '' OR runes != '' OR patch_version != '')""",
+        (my_champion,))
     return {r["opp_champion"]: {
-        "notes": r["notes"], "primary_keystone": r["primary_keystone"],
-        "secondary_tree": r["secondary_tree"], "patch_version": r["patch_version"],
+        "notes": r["notes"], "runes": json.loads(r["runes"]) if r["runes"] else [],
+        "patch_version": r["patch_version"],
     } for r in rows}
 
 
-def set_matchup_note(conn, champion, notes="", primary_keystone="", secondary_tree="",
-                      patch_version=""):
-    """Upsert the champ guide for a matchup; all-blank fields delete the row."""
+def set_matchup_note(conn, my_champion, opp_champion, notes="", runes=None, patch_version=""):
+    """Upsert the champ guide for a (my_champion, opp_champion) matchup.
+    runes: list of rune-page dicts (label, primary_tree, keystone,
+    primary_runes[], secondary_tree, secondary_runes[], shards[]). All-blank
+    (no notes, no rune pages, no patch) deletes the row."""
+    runes_json = json.dumps(runes) if runes else ""
     with conn:
-        if not any(f.strip() for f in (notes, primary_keystone, secondary_tree, patch_version)):
-            conn.execute("DELETE FROM matchup_notes WHERE opp_champion=?", (champion,))
+        if not notes.strip() and not runes_json and not patch_version.strip():
+            conn.execute(
+                "DELETE FROM matchup_notes WHERE my_champion=? AND opp_champion=?",
+                (my_champion, opp_champion))
             return
         conn.execute(
             f"""INSERT INTO matchup_notes
-                (opp_champion, notes, primary_keystone, secondary_tree, patch_version,
-                 updated_at_ms)
+                (my_champion, opp_champion, notes, runes, patch_version, updated_at_ms)
                 VALUES (?, ?, ?, ?, ?, {_now_expr()})
-                ON CONFLICT(opp_champion) DO UPDATE SET
+                ON CONFLICT(my_champion, opp_champion) DO UPDATE SET
                   notes=excluded.notes,
-                  primary_keystone=excluded.primary_keystone,
-                  secondary_tree=excluded.secondary_tree,
+                  runes=excluded.runes,
                   patch_version=excluded.patch_version,
                   updated_at_ms=excluded.updated_at_ms""",
-            (champion, notes, primary_keystone, secondary_tree, patch_version))
+            (my_champion, opp_champion, notes, runes_json, patch_version))
 
 
 def record_rank_history(conn, puuid, tier, division, lp, fetched_at_ms):

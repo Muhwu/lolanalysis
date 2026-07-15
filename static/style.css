@@ -703,18 +703,77 @@ td.rank-cell { font-size: 12px; line-height: 1.5; }
 .mu-notes-head { display: flex; align-items: center; gap: 8px; }
 .mu-notes-head h4 { margin: 0; }
 .mu-notes textarea { width: 100%; margin-top: 6px; }
-.mu-guide-fields {
-  display: flex; flex-wrap: wrap; gap: 12px; margin: 8px 0 10px;
-}
-.mu-guide-fields > div { display: flex; flex-direction: column; gap: 2px; }
-.mu-guide-fields select, .mu-guide-fields input[type="text"] { min-width: 180px; }
-.mu-guide-runes { display: flex; gap: 8px; margin: 4px 0; flex-wrap: wrap; }
-.mu-guide-pill {
-  font-size: 12px; padding: 2px 8px; border-radius: 999px;
-  background: var(--chip-bg, var(--grid)); color: var(--text-secondary);
-}
 .mu-guide-patch { font-size: 12px; margin-bottom: 4px; }
 .mu-block-notes { margin-top: 16px; max-width: 720px; }
+
+/* ---------- champ guide view ---------- */
+.mu-guide-link { font-size: 14px; }
+#guide-list .guide-row {
+  max-width: 960px; margin: 0 0 18px; padding-bottom: 14px;
+  border-bottom: 1px solid var(--grid);
+}
+#guide-list .guide-row:last-child { border-bottom: none; }
+#guide-list .mu-notes-head h4 { display: flex; align-items: center; gap: 6px; }
+.guide-stat { margin-left: auto; font-size: 12px; }
+
+/* rune page builder (edit mode) */
+.rune-pages-builder { margin: 10px 0 14px; }
+.rune-pages-builder h4 { margin: 0 0 6px; font-size: 14px; }
+.rune-page-add { margin-top: 4px; }
+.rune-page-chip {
+  display: flex; align-items: center; gap: 10px; padding: 6px 8px;
+  border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px;
+}
+.rune-page-chip-icons { display: flex; align-items: center; position: relative; }
+.rune-page-chip-icons img { border-radius: 50%; background: var(--surface-1); }
+.rune-page-chip-icons img.rune-page-chip-secondary { margin-left: -8px; border: 2px solid var(--surface-0, var(--bg)); }
+.rune-page-chip-text { display: flex; flex-direction: column; flex: 1; gap: 1px; font-size: 13px; }
+.rune-page-chip-text .muted { font-size: 12px; }
+.rune-page-editor {
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+  margin-bottom: 6px; background: var(--surface-1);
+}
+.rune-page-label {
+  width: 100%; margin-bottom: 10px; font: inherit; font-size: 13px;
+  border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px;
+  background: var(--surface-0, transparent); color: var(--text-primary);
+}
+.rune-page-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 700px) { .rune-page-cols { grid-template-columns: 1fr; } }
+.rune-tree-col h5, .rune-page-editor > h5 { margin: 10px 0 6px; font-size: 12px; color: var(--text-secondary); }
+.rune-tree-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.rune-tree-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 4px 6px;
+  background: transparent; cursor: pointer; font-size: 10px; color: var(--text-secondary);
+}
+.rune-tree-btn img { border-radius: 50%; }
+.rune-tree-btn.active { background: var(--accent-wash); border-color: var(--series-1); color: var(--text-primary); }
+.rune-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.rune-row-keystone .rune-btn img { width: 32px; height: 32px; }
+.rune-btn {
+  border: 2px solid transparent; border-radius: 50%; padding: 2px;
+  background: var(--surface-1); cursor: pointer; line-height: 0;
+}
+.rune-btn img { border-radius: 50%; display: block; }
+.rune-btn.active { border-color: var(--series-1); background: var(--accent-wash); }
+.rune-btn.shard-btn { padding: 3px; }
+.rune-hint { font-size: 11px; margin: 2px 0 4px; }
+
+/* read-only rune page display */
+.rune-pages-display { display: flex; flex-wrap: wrap; gap: 12px; margin: 6px 0 10px; }
+.rune-page-card {
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  min-width: 220px;
+}
+.rune-page-title { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.rune-page-display { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.rune-page-display img { border-radius: 50%; background: var(--surface-1); }
+.rune-page-minors { display: flex; gap: 2px; }
+.rune-page-shards { display: flex; gap: 2px; margin-left: 4px; }
+.rune-keystone-icon { margin-right: 2px; }
+.rune-tree-icon { margin: 0 2px 0 6px; }
+
 .bn-all-label { font-size: 12px; font-weight: 400; }
 .bn-item { margin: 10px 0; padding-left: 10px; border-left: 3px solid var(--grid); }
 .bn-meta { font-size: 12px; margin-bottom: 2px; }

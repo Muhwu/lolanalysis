@@ -16,6 +16,7 @@
     <button id="nav-progress" role="tab">Coaching progress</button>
     <button id="nav-trends" role="tab">Trends</button>
     <button id="nav-blocks" role="tab">Blocks</button>
+    <button id="nav-guide" role="tab">Champ guide</button>
   </div>
   <details id="account-select" class="col-picker hidden" aria-label="Accounts">
     <summary id="account-select-btn" class="preset">All accounts ▾</summary>
@@ -155,6 +156,7 @@
         <label><input type="checkbox" class="view-toggle-cb" value="progress" checked> Coaching progress</label>
         <label><input type="checkbox" class="view-toggle-cb" value="trends" checked> Trends</label>
         <label><input type="checkbox" class="view-toggle-cb" value="blocks" checked> Blocks</label>
+        <label><input type="checkbox" class="view-toggle-cb" value="guide" checked> Champ guide</label>
       </div>
       <p class="muted">Untick views you don't use to hide them from the top bar
         (data collection is unaffected).</p>
@@ -266,8 +268,34 @@
       <button id="mu-view-rank" role="tab">Grouped by opponent rank</button>
     </div>
   </div>
-  <p class="muted">Expand a matchup for the win/loss timeline and your notes on it.</p>
+  <p class="muted">Expand a matchup for the win/loss timeline and block notes. Pick a
+    "My champion" filter to jump to its Champ guide (📖) for runes, patch, and
+    notes on how to play the matchup.</p>
   <div id="mu-table"></div>
+</section>
+</div>
+
+<div id="guide-view" class="hidden">
+<section class="filter-row" aria-label="Champ guide filters">
+  <div class="filter-group">
+    <label class="filter-label" for="guide-champion">My champion</label>
+    <select id="guide-champion"></select>
+  </div>
+  <span class="muted">Runes, patch, and Markdown notes for each matchup this champion faces.</span>
+</section>
+
+<section>
+  <h2>Champ guide</h2>
+  <div id="guide-list"></div>
+  <form id="guide-add-form" class="filter-row" style="margin-top:10px">
+    <div class="filter-group" style="flex:1">
+      <label class="filter-label" for="guide-add-input">Add a matchup</label>
+      <input type="text" id="guide-add-input" list="champ-list"
+        placeholder="opponent champion…" style="width:100%">
+    </div>
+    <button type="submit" class="preset">Add</button>
+    <span id="guide-add-status" class="muted"></span>
+  </form>
 </section>
 </div>
 
@@ -366,5 +394,6 @@
 <script src="matchups.js"></script>
 <script src="trends.js"></script>
 <script src="blocks.js"></script>
+<script src="guide.js"></script>
 </body>
 </html>

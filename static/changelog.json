@@ -1,6 +1,17 @@
 {
   "entries": [
     {
+      "version": "1.14.0",
+      "date": "2026-07-15",
+      "items": [
+        "Champ guide moved to its own page — pick any champion (full roster, not just ones you've played) and see/edit full rune pages, patch, and notes for every matchup it has faced, or add one for a matchup you haven't played yet",
+        "Rune picker is now a full click-through builder — primary tree, keystone, 3 minor rows, secondary tree, 2 secondary minors, and 3 stat shards, with real rune icons",
+        "A matchup can hold more than one rune page (e.g. alternatives you're testing)",
+        "Champ guide is scoped per (your champion, opponent) instead of just the opponent — Gwen vs Darius and Camille vs Darius get separate guides",
+        "Matchups table links out to the Champ guide page for the selected \"My champion\" filter"
+      ]
+    },
+    {
       "version": "1.13.0",
       "date": "2026-07-15",
       "items": [

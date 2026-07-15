@@ -533,25 +533,47 @@ def test_rank_history_endpoint(client, tmp_path, monkeypatch):
     assert data["sessions"] == [{"date": "2026-07-01", "title": "wave management"}]
 
 
+CONQ_PAGE = {
+    "label": "Standard", "primary_tree": "Precision", "keystone": "Conqueror",
+    "primary_runes": ["Triumph", "Legend: Alacrity", "Last Stand"],
+    "secondary_tree": "Resolve", "secondary_runes": ["Bone Plating", "Overgrowth"],
+    "shards": ["Adaptive Force", "Adaptive Force", "Health"],
+}
+GRASP_PAGE = {
+    "label": "vs poke", "primary_tree": "Resolve", "keystone": "Grasp of the Undying",
+    "primary_runes": ["Demolish", "Second Wind", "Overgrowth"],
+    "secondary_tree": "Inspiration", "secondary_runes": ["Biscuit Delivery", "Cosmic Insight"],
+    "shards": ["Health", "Armor", "Health"],
+}
+
+
 def test_matchup_notes_endpoints(client):
-    assert client.get("/api/matchups/notes").json() == {}
-    r = client.put("/api/matchups/notes/Darius", json={
-        "notes": "- respect level 2", "primary_keystone": "Conqueror",
-        "secondary_tree": "Resolve", "patch_version": "14.14"})
+    assert client.get("/api/matchups/notes?my_champion=Gwen").json() == {}
+    # a matchup can carry more than one rune page (e.g. alternatives being tested)
+    r = client.put("/api/matchups/notes/Gwen/Darius", json={
+        "notes": "- respect level 2", "runes": [CONQ_PAGE, GRASP_PAGE], "patch_version": "14.14"})
     assert r.status_code == 200
-    assert client.get("/api/matchups/notes").json() == {"Darius": {
-        "notes": "- respect level 2", "primary_keystone": "Conqueror",
-        "secondary_tree": "Resolve", "patch_version": "14.14"}}
-    client.put("/api/matchups/notes/Darius", json={
-        "notes": "", "primary_keystone": "", "secondary_tree": "", "patch_version": ""})
-    assert client.get("/api/matchups/notes").json() == {}  # all-blank deletes
-    assert client.put("/api/matchups/notes/NotAChamp",
+    assert client.get("/api/matchups/notes?my_champion=Gwen").json() == {"Darius": {
+        "notes": "- respect level 2", "runes": [CONQ_PAGE, GRASP_PAGE], "patch_version": "14.14"}}
+    # a different "my champion" has its own, independent guide
+    assert client.get("/api/matchups/notes?my_champion=Camille").json() == {}
+    assert client.get("/api/matchups/notes").status_code == 422  # my_champion required
+    client.put("/api/matchups/notes/Gwen/Darius", json={
+        "notes": "", "runes": [], "patch_version": ""})
+    assert client.get("/api/matchups/notes?my_champion=Gwen").json() == {}  # all-blank deletes
+    assert client.put("/api/matchups/notes/Gwen/NotAChamp",
                       json={"notes": "x"}).status_code == 400
-    assert client.put("/api/matchups/notes/Darius", json={}).status_code == 400
-    assert client.put("/api/matchups/notes/Darius",
-                      json={"primary_keystone": "Not A Rune"}).status_code == 400
-    assert client.put("/api/matchups/notes/Darius",
-                      json={"secondary_tree": "Not A Tree"}).status_code == 400
+    assert client.put("/api/matchups/notes/NotAChamp/Darius",
+                      json={"notes": "x"}).status_code == 400
+    assert client.put("/api/matchups/notes/Gwen/Darius", json={}).status_code == 400
+    assert client.put("/api/matchups/notes/Gwen/Darius",
+                      json={"runes": [{"keystone": "Not A Rune"}]}).status_code == 400
+    assert client.put("/api/matchups/notes/Gwen/Darius",
+                      json={"runes": [{"primary_tree": "Not A Tree"}]}).status_code == 400
+    assert client.put("/api/matchups/notes/Gwen/Darius",
+                      json={"runes": [{"shards": ["Not A Shard"]}]}).status_code == 400
+    assert client.put("/api/matchups/notes/Gwen/Darius",
+                      json={"runes": "not-a-list"}).status_code == 400
 
 
 def _put_settings(client, **extra):
@@ -661,9 +683,9 @@ def test_close_block_endpoint(client):
 
 def test_matchup_notes_accept_match_v5_champion_spelling(client):
     # match-v5 says FiddleSticks; DDragon says Fiddlesticks — both must save
-    assert client.put("/api/matchups/notes/FiddleSticks",
+    assert client.put("/api/matchups/notes/Gwen/FiddleSticks",
                       json={"notes": "ban worthy"}).status_code == 200
-    assert client.get("/api/matchups/notes").json()["FiddleSticks"]["notes"] == "ban worthy"
+    assert client.get("/api/matchups/notes?my_champion=Gwen").json()["FiddleSticks"]["notes"] == "ban worthy"
 
 
 def test_close_block_rejects_empty_block(client):

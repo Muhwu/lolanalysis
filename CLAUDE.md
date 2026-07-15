@@ -45,6 +45,15 @@ change, not a crawler change.
   app.py). Refresh after new champion releases:
   fetch DDragon versions.json → cdn/<ver>/data/en_US/champion.json →
   regenerate the file (see git history of the file for the exact script).
+- `static/runes.json` is the static rune tree/row/shard roster (names +
+  icon paths) that drives the Champ guide rune-page picker (client +
+  `RUNE_TREE_NAMES`/`RUNE_NAMES`/`RUNE_SHARD_NAMES` in app.py). Refresh
+  after a rune rework: DDragon versions.json → cdn/<ver>/data/en_US/
+  runesReforged.json for trees/keystones/minors (icon paths as-is, served
+  from `ddragon.leagueoflegends.com/cdn/img/<icon>`); stat shards aren't in
+  that file — pull them from CommunityDragon's
+  `rcp-be-lol-game-data/global/default/v1/perks.json`, icons served from
+  `raw.communitydragon.org/.../perk-images/statmods/<icon lowercased>`.
 - Timestamps are **ms epoch** everywhere in the db; match-v5 `startTime`
   param is **seconds**.
 
@@ -110,10 +119,15 @@ change, not a crawler change.
   segment game rows.
 - `static/` — no build step; state + fetch + innerHTML render in `app.js`;
   matchups view (own tab: expanded rows with Overview [win/loss strip + block
-  notes] / Games / Champ guide [runes, patch, how-to-play notes] tabs) in
-  `matchups.js`;
+  notes] / Games tabs; a 📖 link per row — shown only when a specific "My
+  champion" filter is active, since guides are scoped per champion pair —
+  deep-links to that matchup's Champ guide) in `matchups.js`;
   trends view (SVG small-multiple charts + breakdown table) in `trends.js`;
-  blocks view in `blocks.js`.
+  blocks view in `blocks.js`; Champ guide view (own nav tab: pick "My
+  champion" from the full roster — not just played champions — see/edit
+  full rune pages + patch + notes for every matchup it has faced, or add one
+  for a matchup not yet played via the shared champion-roster autocomplete
+  from `blocks.js`) in `guide.js`.
 
 ## Schema (data/lol.sqlite)
 
@@ -130,15 +144,34 @@ ladder points; coaching sessions drawn as vertical lines client-side).
 Between/before snapshots, `stats._with_estimates` interleaves ±20 LP estimated
 points from ranked-solo win/loss (`estimated: true`, rendered faint; each real
 snapshot resets the drift, backward walk reconstructs pre-snapshot history).
-`matchup_notes(opp_champion PK, notes, primary_keystone, secondary_tree,
-patch_version, updated_at_ms)` — per-matchup "Champ guide": Markdown notes on
-how to play the matchup plus a rune keystone/secondary-tree pick (from
-`static/runes.json`, mirrored server-side as `RUNE_KEYSTONE_NAMES`/
-`RUNE_TREE_NAMES` in app.py for validation) and a freeform patch string.
-`GET /api/matchups/notes` returns `{champion: {notes, primary_keystone,
-secondary_tree, patch_version}}`; `PUT /api/matchups/notes/{champion}` is a
-full-row upsert (all fields blank deletes the row) — shown in its own
-"Champ guide" tab in the matchup detail panel (`matchups.js`).
+`matchup_notes(my_champion+opp_champion PK, notes, runes, patch_version,
+updated_at_ms)` — "Champ guide" scoped per (your champion, opponent
+champion) pair: Markdown notes on how to play the matchup, a freeform patch
+string, and `runes` — a JSON array of full rune pages (a matchup can carry
+more than one, e.g. alternatives being tested). Each page: `{label,
+primary_tree, keystone, primary_runes: [row1, row2, row3], secondary_tree,
+secondary_runes: [rune, rune], shards: [offense, flex, defense]}`. Tree/rune/
+shard data lives in `static/runes.json` (fetched from DDragon's
+runesReforged.json + CommunityDragon's stat-shard perks; icons hotlinked at
+request time — trees/runes via `ddragon.leagueoflegends.com/cdn/img/<icon>`,
+shards via `raw.communitydragon.org/.../perk-images/statmods/<icon>`),
+mirrored server-side as `RUNE_TREE_NAMES`/`RUNE_NAMES`/`RUNE_SHARD_NAMES` in
+app.py for loose membership validation (no positional/row-consistency
+checks — the picker UI is what enforces valid combinations).
+`GET /api/matchups/notes?my_champion=` returns `{opp_champion: {notes,
+runes, patch_version}}` for that champion (loose — "My champion" is chosen
+from the full roster, not just played champions); `PUT /api/matchups/notes/
+{my_champion}/{opp_champion}` is a full-row upsert (all fields blank deletes
+the row). Own view: `guide.js` (pick "My champion" from the full roster,
+see/edit every matchup it has faced or add one for a matchup not yet
+played; each rune page is built with a full click-through picker —
+primary tree → keystone + 3 minor rows, secondary tree → 2 minors from
+different rows, 3 stat shards); the Matchups table's 📖 link deep-links
+here via `openGuide()`. PK changed from opp_champion-only, and the old
+single primary_keystone/secondary_tree columns collapsed into the `runes`
+list, across two migrations in `db._migrate` (SQLite can't ALTER a primary
+key, so both rebuild the table) — old rows land at `my_champion=''` since
+neither predecessor schema tracked which champion notes were written for.
 `crawl_state(puuid+queue_id PK, newest_ms, complete)` — resume watermarks
 `participant_metrics(match_id+puuid PK, has_challenges, one REAL col per
 metric key)` — coaching metrics, tracked players only, columns generated
@@ -161,7 +194,11 @@ from `server/metrics.py`
   `ALTER TABLE ... ADD COLUMN` guarded by a `PRAGMA table_info` check in
   `db._migrate`. Never `DROP`, recreate, or bulk-`DELETE`/`UPDATE` tables
   holding user content (sessions, block notes/learnings, matchup notes,
-  rank history). One-time backfills must be idempotent and additive (see
+  rank history) in a way that loses data — a primary-key
+  change is the one case SQLite can't do via `ALTER TABLE`; the
+  `matchup_notes` PK-widening migration is the template: rename to `_old`,
+  create the new shape, copy every row forward, drop `_old`, all inside
+  `_migrate`. One-time backfills must be idempotent and additive (see
   `seed_rank_history`). `tests/test_db.py::
   test_upgrade_from_older_db_preserves_all_notes` guards this — extend it
   when adding user-content tables.

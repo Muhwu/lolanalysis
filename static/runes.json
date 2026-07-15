@@ -1,24 +1,222 @@
 {
+  "_comment": "Rune tree/row/shard data from Data Dragon runesReforged.json (ddragon 16.14.1) and CommunityDragon perks.json for stat shards. Icon paths are relative — trees/runes resolve via https://ddragon.leagueoflegends.com/cdn/img/<icon>; shards via https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perk-images/statmods/<icon>.",
   "trees": [
     {
       "name": "Precision",
-      "keystones": ["Press the Attack", "Lethal Tempo", "Fleet Footwork", "Conqueror"]
+      "icon": "perk-images/Styles/7201_Precision.png",
+      "rows": [
+        {
+          "slot": "keystone",
+          "runes": [
+            { "name": "Press the Attack", "icon": "perk-images/Styles/Precision/PressTheAttack/PressTheAttack.png" },
+            { "name": "Lethal Tempo", "icon": "perk-images/Styles/Precision/LethalTempo/LethalTempoTemp.png" },
+            { "name": "Fleet Footwork", "icon": "perk-images/Styles/Precision/FleetFootwork/FleetFootwork.png" },
+            { "name": "Conqueror", "icon": "perk-images/Styles/Precision/Conqueror/Conqueror.png" }
+          ]
+        },
+        {
+          "slot": 1,
+          "runes": [
+            { "name": "Absorb Life", "icon": "perk-images/Styles/Precision/AbsorbLife/AbsorbLife.png" },
+            { "name": "Triumph", "icon": "perk-images/Styles/Precision/Triumph.png" },
+            { "name": "Presence of Mind", "icon": "perk-images/Styles/Precision/PresenceOfMind/PresenceOfMind.png" }
+          ]
+        },
+        {
+          "slot": 2,
+          "runes": [
+            { "name": "Legend: Alacrity", "icon": "perk-images/Styles/Precision/LegendAlacrity/LegendAlacrity.png" },
+            { "name": "Legend: Haste", "icon": "perk-images/Styles/Precision/LegendHaste/LegendHaste.png" },
+            { "name": "Legend: Bloodline", "icon": "perk-images/Styles/Precision/LegendBloodline/LegendBloodline.png" }
+          ]
+        },
+        {
+          "slot": 3,
+          "runes": [
+            { "name": "Coup de Grace", "icon": "perk-images/Styles/Precision/CoupDeGrace/CoupDeGrace.png" },
+            { "name": "Cut Down", "icon": "perk-images/Styles/Precision/CutDown/CutDown.png" },
+            { "name": "Last Stand", "icon": "perk-images/Styles/Sorcery/LastStand/LastStand.png" }
+          ]
+        }
+      ]
     },
     {
       "name": "Domination",
-      "keystones": ["Electrocute", "Dark Harvest", "Hail of Blades"]
+      "icon": "perk-images/Styles/7200_Domination.png",
+      "rows": [
+        {
+          "slot": "keystone",
+          "runes": [
+            { "name": "Electrocute", "icon": "perk-images/Styles/Domination/Electrocute/Electrocute.png" },
+            { "name": "Dark Harvest", "icon": "perk-images/Styles/Domination/DarkHarvest/DarkHarvest.png" },
+            { "name": "Hail of Blades", "icon": "perk-images/Styles/Domination/HailOfBlades/HailOfBlades.png" }
+          ]
+        },
+        {
+          "slot": 1,
+          "runes": [
+            { "name": "Cheap Shot", "icon": "perk-images/Styles/Domination/CheapShot/CheapShot.png" },
+            { "name": "Taste of Blood", "icon": "perk-images/Styles/Domination/TasteOfBlood/GreenTerror_TasteOfBlood.png" },
+            { "name": "Sudden Impact", "icon": "perk-images/Styles/Domination/SuddenImpact/SuddenImpact.png" }
+          ]
+        },
+        {
+          "slot": 2,
+          "runes": [
+            { "name": "Sixth Sense", "icon": "perk-images/Styles/Domination/SixthSense/SixthSense.png" },
+            { "name": "Grisly Mementos", "icon": "perk-images/Styles/Domination/GrislyMementos/GrislyMementos.png" },
+            { "name": "Deep Ward", "icon": "perk-images/Styles/Domination/DeepWard/DeepWard.png" }
+          ]
+        },
+        {
+          "slot": 3,
+          "runes": [
+            { "name": "Treasure Hunter", "icon": "perk-images/Styles/Domination/TreasureHunter/TreasureHunter.png" },
+            { "name": "Relentless Hunter", "icon": "perk-images/Styles/Domination/RelentlessHunter/RelentlessHunter.png" },
+            { "name": "Ultimate Hunter", "icon": "perk-images/Styles/Domination/UltimateHunter/UltimateHunter.png" }
+          ]
+        }
+      ]
     },
     {
       "name": "Sorcery",
-      "keystones": ["Summon Aery", "Arcane Comet", "Phase Rush"]
+      "icon": "perk-images/Styles/7202_Sorcery.png",
+      "rows": [
+        {
+          "slot": "keystone",
+          "runes": [
+            { "name": "Summon Aery", "icon": "perk-images/Styles/Sorcery/SummonAery/SummonAery.png" },
+            { "name": "Arcane Comet", "icon": "perk-images/Styles/Sorcery/ArcaneComet/ArcaneComet.png" },
+            { "name": "Phase Rush", "icon": "perk-images/Styles/Sorcery/PhaseRush/StormraidersSurgeRuneIcon2.png" }
+          ]
+        },
+        {
+          "slot": 1,
+          "runes": [
+            { "name": "Nullifying Orb", "icon": "perk-images/Styles/Sorcery/NullifyingOrb/Axiom_Arcanist.png" },
+            { "name": "Manaflow Band", "icon": "perk-images/Styles/Sorcery/ManaflowBand/ManaflowBand.png" },
+            { "name": "Nimbus Cloak", "icon": "perk-images/Styles/Sorcery/NimbusCloak/6361.png" }
+          ]
+        },
+        {
+          "slot": 2,
+          "runes": [
+            { "name": "Transcendence", "icon": "perk-images/Styles/Sorcery/Transcendence/Transcendence.png" },
+            { "name": "Celerity", "icon": "perk-images/Styles/Sorcery/Celerity/CelerityTemp.png" },
+            { "name": "Absolute Focus", "icon": "perk-images/Styles/Sorcery/AbsoluteFocus/AbsoluteFocus.png" }
+          ]
+        },
+        {
+          "slot": 3,
+          "runes": [
+            { "name": "Scorch", "icon": "perk-images/Styles/Sorcery/Scorch/Scorch.png" },
+            { "name": "Waterwalking", "icon": "perk-images/Styles/Sorcery/Waterwalking/Waterwalking.png" },
+            { "name": "Gathering Storm", "icon": "perk-images/Styles/Sorcery/GatheringStorm/GatheringStorm.png" }
+          ]
+        }
+      ]
     },
     {
       "name": "Resolve",
-      "keystones": ["Grasp of the Undying", "Aftershock", "Guardian"]
+      "icon": "perk-images/Styles/7204_Resolve.png",
+      "rows": [
+        {
+          "slot": "keystone",
+          "runes": [
+            { "name": "Grasp of the Undying", "icon": "perk-images/Styles/Resolve/GraspOfTheUndying/GraspOfTheUndying.png" },
+            { "name": "Aftershock", "icon": "perk-images/Styles/Resolve/VeteranAftershock/VeteranAftershock.png" },
+            { "name": "Guardian", "icon": "perk-images/Styles/Resolve/Guardian/Guardian.png" }
+          ]
+        },
+        {
+          "slot": 1,
+          "runes": [
+            { "name": "Demolish", "icon": "perk-images/Styles/Resolve/Demolish/Demolish.png" },
+            { "name": "Font of Life", "icon": "perk-images/Styles/Resolve/FontOfLife/FontOfLife.png" },
+            { "name": "Shield Bash", "icon": "perk-images/Styles/Resolve/MirrorShell/MirrorShell.png" }
+          ]
+        },
+        {
+          "slot": 2,
+          "runes": [
+            { "name": "Conditioning", "icon": "perk-images/Styles/Resolve/Conditioning/Conditioning.png" },
+            { "name": "Second Wind", "icon": "perk-images/Styles/Resolve/SecondWind/SecondWind.png" },
+            { "name": "Bone Plating", "icon": "perk-images/Styles/Resolve/BonePlating/BonePlating.png" }
+          ]
+        },
+        {
+          "slot": 3,
+          "runes": [
+            { "name": "Overgrowth", "icon": "perk-images/Styles/Resolve/Overgrowth/Overgrowth.png" },
+            { "name": "Revitalize", "icon": "perk-images/Styles/Resolve/Revitalize/Revitalize.png" },
+            { "name": "Unflinching", "icon": "perk-images/Styles/Sorcery/Unflinching/Unflinching.png" }
+          ]
+        }
+      ]
     },
     {
       "name": "Inspiration",
-      "keystones": ["Glacial Augment", "Unsealed Spellbook", "First Strike"]
+      "icon": "perk-images/Styles/7203_Whimsy.png",
+      "rows": [
+        {
+          "slot": "keystone",
+          "runes": [
+            { "name": "Glacial Augment", "icon": "perk-images/Styles/Inspiration/GlacialAugment/GlacialAugment.png" },
+            { "name": "Unsealed Spellbook", "icon": "perk-images/Styles/Inspiration/UnsealedSpellbook/UnsealedSpellbook.png" },
+            { "name": "First Strike", "icon": "perk-images/Styles/Inspiration/FirstStrike/FirstStrike.png" }
+          ]
+        },
+        {
+          "slot": 1,
+          "runes": [
+            { "name": "Hextech Flashtraption", "icon": "perk-images/Styles/Inspiration/HextechFlashtraption/HextechFlashtraption.png" },
+            { "name": "Magical Footwear", "icon": "perk-images/Styles/Inspiration/MagicalFootwear/MagicalFootwear.png" },
+            { "name": "Cash Back", "icon": "perk-images/Styles/Inspiration/CashBack/CashBack2.png" }
+          ]
+        },
+        {
+          "slot": 2,
+          "runes": [
+            { "name": "Triple Tonic", "icon": "perk-images/Styles/Inspiration/PerfectTiming/AlchemistCabinet.png" },
+            { "name": "Time Warp Tonic", "icon": "perk-images/Styles/Inspiration/TimeWarpTonic/TimeWarpTonic.png" },
+            { "name": "Biscuit Delivery", "icon": "perk-images/Styles/Inspiration/BiscuitDelivery/BiscuitDelivery.png" }
+          ]
+        },
+        {
+          "slot": 3,
+          "runes": [
+            { "name": "Cosmic Insight", "icon": "perk-images/Styles/Inspiration/CosmicInsight/CosmicInsight.png" },
+            { "name": "Approach Velocity", "icon": "perk-images/Styles/Resolve/ApproachVelocity/ApproachVelocity.png" },
+            { "name": "Jack Of All Trades", "icon": "perk-images/Styles/Inspiration/JackOfAllTrades/JackofAllTrades2.png" }
+          ]
+        }
+      ]
+    }
+  ],
+  "shardRows": [
+    {
+      "slot": "offense",
+      "shards": [
+        { "name": "Adaptive Force", "icon": "statmodsadaptiveforceicon.png" },
+        { "name": "Attack Speed", "icon": "statmodsattackspeedicon.png" },
+        { "name": "Ability Haste", "icon": "statmodscdrscalingicon.png" }
+      ]
+    },
+    {
+      "slot": "flex",
+      "shards": [
+        { "name": "Adaptive Force", "icon": "statmodsadaptiveforceicon.png" },
+        { "name": "Armor", "icon": "statmodsarmoricon.png" },
+        { "name": "Magic Resist", "icon": "statmodsmagicresicon.png" }
+      ]
+    },
+    {
+      "slot": "defense",
+      "shards": [
+        { "name": "Health", "icon": "statmodshealthscalingicon.png" },
+        { "name": "Tenacity and Slow Resist", "icon": "statmodstenacityicon.png" },
+        { "name": "Health Scaling", "icon": "statmodshealthplusicon.png" }
+      ]
     }
   ]
 }

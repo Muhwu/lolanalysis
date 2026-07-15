@@ -35,18 +35,20 @@ def _champion_ids():
 CHAMPION_IDS = _champion_ids()
 
 
-def _rune_names():
-    """Valid keystone/tree names from the static rune data file, for loose
-    validation of champ-guide rune fields (see static/runes.json)."""
+def _rune_data():
+    """Valid tree/rune/shard names from the static rune data file, for loose
+    validation of champ-guide rune-page fields (see static/runes.json)."""
     try:
-        trees = json.loads((PROJECT_ROOT / "static" / "runes.json").read_text())["trees"]
-        return ({t["name"] for t in trees},
-                {k for t in trees for k in t["keystones"]})
+        data = json.loads((PROJECT_ROOT / "static" / "runes.json").read_text())
+        tree_names = {t["name"] for t in data["trees"]}
+        rune_names = {r["name"] for t in data["trees"] for row in t["rows"] for r in row["runes"]}
+        shard_names = {s["name"] for row in data["shardRows"] for s in row["shards"]}
+        return tree_names, rune_names, shard_names
     except (OSError, KeyError, ValueError):
-        return set(), set()  # roster file missing/corrupt: skip validation rather than break
+        return set(), set(), set()  # data file missing/corrupt: skip validation rather than break
 
 
-RUNE_TREE_NAMES, RUNE_KEYSTONE_NAMES = _rune_names()
+RUNE_TREE_NAMES, RUNE_NAMES, RUNE_SHARD_NAMES = _rune_data()
 
 RANGE_PRESETS = {"7d": 7, "14d": 14, "30d": 30, "90d": 90, "180d": 180, "365d": 365}
 
@@ -99,7 +101,7 @@ def api_version():
     return {"version": config.app_version(), "repo": config.GITHUB_REPO}
 
 
-HIDEABLE_VIEWS = {"overview", "matchups", "progress", "trends", "blocks"}
+HIDEABLE_VIEWS = {"overview", "matchups", "progress", "trends", "blocks", "guide"}
 
 
 def _hidden_views(conn):
@@ -463,39 +465,62 @@ def api_trends(request: Request, bucket: str = "month"):
         conn.close()
 
 
-@app.get("/api/matchups/notes")
-def api_matchup_notes():
-    conn = get_conn()
-    try:
-        return db.get_matchup_notes(conn)
-    finally:
-        conn.close()
-
-
-@app.put("/api/matchups/notes/{champion}")
-def api_put_matchup_note(champion: str, body: dict):
-    body = body or {}
-    if not any(k in body for k in ("notes", "primary_keystone", "secondary_tree", "patch_version")):
-        raise HTTPException(400, "provide at least one of: notes, primary_keystone, "
-                                  "secondary_tree, patch_version")
+def _validate_champion(champion: str):
     # match-v5 names differ in case from DDragon ids (FiddleSticks vs
     # Fiddlesticks) — validate case-insensitively, store the name as given
     # because reads key by the match-v5 spelling
     if CHAMPION_IDS and champion.lower() not in {c.lower() for c in CHAMPION_IDS}:
         raise HTTPException(400, f"not a champion: {champion}")
-    primary_keystone = str(body.get("primary_keystone") or "")
-    secondary_tree = str(body.get("secondary_tree") or "")
-    if RUNE_KEYSTONE_NAMES and primary_keystone and primary_keystone not in RUNE_KEYSTONE_NAMES:
-        raise HTTPException(400, f"not a keystone: {primary_keystone}")
-    if RUNE_TREE_NAMES and secondary_tree and secondary_tree not in RUNE_TREE_NAMES:
-        raise HTTPException(400, f"not a rune tree: {secondary_tree}")
+
+
+@app.get("/api/matchups/notes")
+def api_matchup_notes(my_champion: str):
+    if not my_champion:
+        raise HTTPException(400, "provide my_champion")
+    conn = get_conn()
+    try:
+        return db.get_matchup_notes(conn, my_champion)
+    finally:
+        conn.close()
+
+
+def _validate_rune_page(page):
+    if not isinstance(page, dict):
+        raise HTTPException(400, "each rune page must be an object")
+    for key in ("primary_tree", "secondary_tree"):
+        value = page.get(key)
+        if value and RUNE_TREE_NAMES and value not in RUNE_TREE_NAMES:
+            raise HTTPException(400, f"not a rune tree: {value}")
+    keystone = page.get("keystone")
+    if keystone and RUNE_NAMES and keystone not in RUNE_NAMES:
+        raise HTTPException(400, f"not a rune: {keystone}")
+    for key in ("primary_runes", "secondary_runes"):
+        for value in page.get(key) or []:
+            if RUNE_NAMES and value not in RUNE_NAMES:
+                raise HTTPException(400, f"not a rune: {value}")
+    for value in page.get("shards") or []:
+        if RUNE_SHARD_NAMES and value not in RUNE_SHARD_NAMES:
+            raise HTTPException(400, f"not a stat shard: {value}")
+
+
+@app.put("/api/matchups/notes/{my_champion}/{opp_champion}")
+def api_put_matchup_note(my_champion: str, opp_champion: str, body: dict):
+    body = body or {}
+    if not any(k in body for k in ("notes", "runes", "patch_version")):
+        raise HTTPException(400, "provide at least one of: notes, runes, patch_version")
+    _validate_champion(my_champion)
+    _validate_champion(opp_champion)
+    runes = body.get("runes") or []
+    if not isinstance(runes, list):
+        raise HTTPException(400, "runes must be a list of rune pages")
+    for page in runes:
+        _validate_rune_page(page)
     conn = get_conn()
     try:
         db.set_matchup_note(
-            conn, champion,
+            conn, my_champion, opp_champion,
             notes=str(body.get("notes") or ""),
-            primary_keystone=primary_keystone,
-            secondary_tree=secondary_tree,
+            runes=runes,
             patch_version=str(body.get("patch_version") or ""))
         return {"saved": True}
     finally:
