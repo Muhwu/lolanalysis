@@ -488,6 +488,16 @@ def test_matchup_notes_migration_from_single_keystone_shape(tmp_path):
     c.close()
 
 
+def test_champion_note_roundtrip(conn):
+    assert db.get_champion_note(conn, "Gwen") == ""
+    db.set_champion_note(conn, "Gwen", "- always take Conqueror\n- build Nashor's first")
+    assert db.get_champion_note(conn, "Gwen") == "- always take Conqueror\n- build Nashor's first"
+    db.set_champion_note(conn, "Gwen", "updated")
+    assert db.get_champion_note(conn, "Gwen") == "updated"
+    db.set_champion_note(conn, "Gwen", "  ")  # blank deletes
+    assert db.get_champion_note(conn, "Gwen") == ""
+
+
 def test_close_block_early_and_next_game_starts_new_block(conn):
     ids = _seed_block_matches(conn, 3)
     assert db.add_game_to_block(conn, ids[0], "me") == 1
@@ -509,7 +519,8 @@ def test_close_block_refused_when_naturally_complete(conn):
 
 def test_upgrade_from_older_db_preserves_all_notes(tmp_path):
     """Simulate an app upgrade: reconnecting to an existing db must never
-    clear user content (sessions, block notes, learnings, matchup notes)."""
+    clear user content (sessions, block notes, learnings, matchup notes,
+    champion notes)."""
     path = tmp_path / "old.sqlite"
     c = db.connect(path)
     db.upsert_player(c, "p1", "PlayerOne", "EUW", is_tracked=True)
@@ -520,6 +531,7 @@ def test_upgrade_from_older_db_preserves_all_notes(tmp_path):
     db.update_block_game(c, entry, "game note")
     db.update_block(c, 1, learnings="learned things")
     db.set_matchup_note(c, "Gwen", "Darius", notes="matchup note", runes=[CONQ_PAGE])
+    db.set_champion_note(c, "Gwen", "general champion note")
     # drop a column added by a later version to mimic an older schema
     c.execute("ALTER TABLE blocks DROP COLUMN closed_at_ms")
     c.commit()
@@ -530,6 +542,7 @@ def test_upgrade_from_older_db_preserves_all_notes(tmp_path):
     assert c.execute("SELECT learnings FROM blocks").fetchone()["learnings"] == "learned things"
     assert db.get_matchup_notes(c, "Gwen") == {"Darius": {
         "notes": "matchup note", "runes": [CONQ_PAGE], "patch_version": ""}}
+    assert db.get_champion_note(c, "Gwen") == "general champion note"
     assert c.execute("SELECT closed_at_ms FROM blocks").fetchone()["closed_at_ms"] is None
     c.close()
 

@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import config, db, stats
+from . import config, crypto, db, stats
 from .config import PROJECT_ROOT
 from .metrics import METRICS
 from .riot_client import PLATFORM_ROUTING
@@ -523,6 +523,124 @@ def api_put_matchup_note(my_champion: str, opp_champion: str, body: dict):
             runes=runes,
             patch_version=str(body.get("patch_version") or ""))
         return {"saved": True}
+    finally:
+        conn.close()
+
+
+@app.get("/api/champions/notes/{champion}")
+def api_get_champion_note(champion: str):
+    conn = get_conn()
+    try:
+        return {"notes": db.get_champion_note(conn, champion)}
+    finally:
+        conn.close()
+
+
+@app.put("/api/champions/notes/{champion}")
+def api_put_champion_note(champion: str, body: dict):
+    body = body or {}
+    if "notes" not in body:
+        raise HTTPException(400, "provide notes")
+    _validate_champion(champion)
+    conn = get_conn()
+    try:
+        db.set_champion_note(conn, champion, str(body.get("notes") or ""))
+        return {"saved": True}
+    finally:
+        conn.close()
+
+
+EXPORT_KIND = "champ-guide-export"
+EXPORT_VERSION = 1
+
+
+@app.post("/api/matchups/notes/export")
+def api_export_champ_guide(body: dict):
+    body = body or {}
+    my_champion = body.get("my_champion")
+    if not my_champion:
+        raise HTTPException(400, "provide my_champion")
+    password = body.get("password") or None
+    conn = get_conn()
+    try:
+        payload = {
+            "general_notes": db.get_champion_note(conn, my_champion),
+            "guide": db.get_matchup_notes(conn, my_champion),
+        }
+    finally:
+        conn.close()
+    envelope = {
+        "app": "coach-potato", "kind": EXPORT_KIND, "version": EXPORT_VERSION,
+        "my_champion": my_champion, "exported_at_ms": int(time.time() * 1000),
+    }
+    if password:
+        envelope["encrypted"] = True
+        envelope.update(crypto.encrypt_payload(payload, password))
+    else:
+        envelope["encrypted"] = False
+        envelope.update(payload)
+    filename = f"champ-guide-{my_champion.lower()}.json"
+    return Response(
+        content=json.dumps(envelope, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+def _decode_champ_guide_export(body):
+    data = body.get("data")
+    if not isinstance(data, dict) or data.get("kind") != EXPORT_KIND:
+        raise HTTPException(400, "not a champ-guide export file")
+    my_champion = data.get("my_champion")
+    if not my_champion:
+        raise HTTPException(400, "export file missing my_champion")
+    if data.get("encrypted"):
+        password = body.get("password")
+        if not password:
+            raise HTTPException(401, "password required")
+        try:
+            payload = crypto.decrypt_payload(
+                data.get("salt"), data.get("iterations"), data.get("ciphertext"), password)
+        except ValueError:
+            raise HTTPException(401, "wrong password or corrupt file")
+    else:
+        payload = {"general_notes": data.get("general_notes", ""), "guide": data.get("guide") or {}}
+    return my_champion, payload
+
+
+@app.post("/api/matchups/notes/import/preview")
+def api_import_champ_guide_preview(body: dict):
+    my_champion, payload = _decode_champ_guide_export(body or {})
+    conn = get_conn()
+    try:
+        existing = set(db.get_matchup_notes(conn, my_champion).keys())
+    finally:
+        conn.close()
+    opponents = list((payload.get("guide") or {}).keys())
+    return {
+        "my_champion": my_champion,
+        "opponents": opponents,
+        "will_overwrite": sorted(existing & set(opponents)),
+        "has_general_notes": bool(payload.get("general_notes")),
+    }
+
+
+@app.post("/api/matchups/notes/import")
+def api_import_champ_guide(body: dict):
+    my_champion, payload = _decode_champ_guide_export(body or {})
+    _validate_champion(my_champion)
+    conn = get_conn()
+    try:
+        if payload.get("general_notes"):
+            db.set_champion_note(conn, my_champion, payload["general_notes"])
+        guide = payload.get("guide") or {}
+        for opp_champion, entry in guide.items():
+            _validate_champion(opp_champion)
+            db.set_matchup_note(
+                conn, my_champion, opp_champion,
+                notes=str((entry or {}).get("notes") or ""),
+                runes=(entry or {}).get("runes") or [],
+                patch_version=str((entry or {}).get("patch_version") or ""))
+        return {"imported": len(guide)}
     finally:
         conn.close()
 

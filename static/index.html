@@ -282,6 +282,29 @@
     <select id="guide-champion"></select>
   </div>
   <span class="muted">Runes, patch, and Markdown notes for each matchup this champion faces.</span>
+  <div class="head-actions">
+    <details class="col-picker">
+      <summary class="preset" title="Export this champion's guide">Export</summary>
+      <div class="col-menu">
+        <label><input type="checkbox" id="guide-export-password-toggle"> Password protect</label>
+        <input type="password" id="guide-export-password" class="hidden" placeholder="password" style="width:100%">
+        <button type="button" id="guide-export-btn">Download .json</button>
+      </div>
+    </details>
+    <details class="col-picker">
+      <summary class="preset" title="Import a champ guide export">Import</summary>
+      <div class="col-menu">
+        <input type="file" id="guide-import-file" accept="application/json">
+        <input type="password" id="guide-import-password" placeholder="password (if protected)" style="width:100%">
+        <button type="button" id="guide-import-btn">Import</button>
+        <span id="guide-import-status" class="muted"></span>
+      </div>
+    </details>
+  </div>
+</section>
+
+<section>
+  <div id="guide-general-notes"></div>
 </section>
 
 <section>

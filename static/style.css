@@ -500,6 +500,10 @@ td.notes-cell { text-align: left; white-space: normal; }
   white-space: nowrap;
 }
 .col-menu label { display: flex; gap: 6px; align-items: center; font-size: 13px; cursor: pointer; }
+.col-menu input[type="password"], .col-menu input[type="file"] {
+  width: 100%; max-width: 220px; box-sizing: border-box; font-size: 12px;
+}
+.col-menu button { margin-top: 2px; }
 td.rank-cell { font-size: 12px; line-height: 1.5; }
 
 .welcome-banner {

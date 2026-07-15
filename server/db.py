@@ -111,6 +111,12 @@ CREATE TABLE IF NOT EXISTS matchup_notes (
     PRIMARY KEY (my_champion, opp_champion)
 );
 
+CREATE TABLE IF NOT EXISTS champion_notes (
+    champion TEXT PRIMARY KEY,
+    notes TEXT NOT NULL DEFAULT '',
+    updated_at_ms INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS rank_history (
     puuid TEXT NOT NULL,
     solo_tier TEXT,
@@ -311,6 +317,27 @@ def set_matchup_note(conn, my_champion, opp_champion, notes="", runes=None, patc
                   patch_version=excluded.patch_version,
                   updated_at_ms=excluded.updated_at_ms""",
             (my_champion, opp_champion, notes, runes_json, patch_version))
+
+
+def get_champion_note(conn, champion):
+    """General (not matchup-specific) Markdown notes for a champion."""
+    row = conn.execute(
+        "SELECT notes FROM champion_notes WHERE champion=?", (champion,)).fetchone()
+    return row["notes"] if row else ""
+
+
+def set_champion_note(conn, champion, notes):
+    """Upsert a champion's general notes; blank notes delete the row."""
+    with conn:
+        if not notes.strip():
+            conn.execute("DELETE FROM champion_notes WHERE champion=?", (champion,))
+            return
+        conn.execute(
+            f"""INSERT INTO champion_notes (champion, notes, updated_at_ms)
+                VALUES (?, ?, {_now_expr()})
+                ON CONFLICT(champion) DO UPDATE SET
+                  notes=excluded.notes, updated_at_ms=excluded.updated_at_ms""",
+            (champion, notes))
 
 
 def record_rank_history(conn, puuid, tier, division, lp, fetched_at_ms):

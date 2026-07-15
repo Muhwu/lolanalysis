@@ -30,6 +30,12 @@ change, not a crawler change.
 
 - **Dev API key expires every 24 h.** 403 → `ApiKeyExpiredError`. Refresh at
   developer.riotgames.com, update `RIOT_API_KEY=` in `.env` (gitignored).
+- **`cryptography` is a real (compiled) dependency**, added for champ-guide
+  export/import encryption (`server/crypto.py`). It ships PyInstaller-
+  compatible wheels/hooks for Windows/macOS/Linux and hasn't caused build
+  issues locally, but hasn't been verified through a full CI `build.yml` run
+  yet — if a packaged build ever fails to import `cryptography`, that's the
+  first thing to check.
 - **Rate limits: 20 req/1 s and 100 req/2 min**, enforced by
   `RateLimiter` in `server/riot_client.py`. Never bypass it; test crawler
   changes with `--limit 5` before any full crawl.
@@ -125,9 +131,11 @@ change, not a crawler change.
   trends view (SVG small-multiple charts + breakdown table) in `trends.js`;
   blocks view in `blocks.js`; Champ guide view (own nav tab: pick "My
   champion" from the full roster — not just played champions — see/edit
-  full rune pages + patch + notes for every matchup it has faced, or add one
-  for a matchup not yet played via the shared champion-roster autocomplete
-  from `blocks.js`) in `guide.js`.
+  general champion notes, full rune pages + patch + notes for every matchup
+  it has faced, or add one for a matchup not yet played via the shared
+  champion-roster autocomplete from `blocks.js`; Export/Import menus export/
+  import one champion's whole guide as JSON, optionally password-encrypted)
+  in `guide.js`.
 
 ## Schema (data/lol.sqlite)
 
@@ -172,6 +180,21 @@ single primary_keystone/secondary_tree columns collapsed into the `runes`
 list, across two migrations in `db._migrate` (SQLite can't ALTER a primary
 key, so both rebuild the table) — old rows land at `my_champion=''` since
 neither predecessor schema tracked which champion notes were written for.
+`champion_notes(champion PK, notes, updated_at_ms)` — general (non-matchup)
+Markdown notes for a champion (build order, itemization…), shown above the
+matchup list on the Champ guide page. `GET`/`PUT /api/champions/notes/
+{champion}`.
+Champ guide export/import (`server/crypto.py`): `POST /api/matchups/notes/
+export` bundles one champion's `champion_notes` + all its `matchup_notes`
+rows into a downloadable JSON file; an optional `password` in the request
+body encrypts the payload (PBKDF2-HMAC-SHA256 key derivation + Fernet/
+AES-128 via the `cryptography` package — a real cipher, not obfuscation).
+`POST /api/matchups/notes/import/preview` decrypts (if needed) and reports
+which opponents would be added/overwritten without writing anything;
+`POST /api/matchups/notes/import` performs the writes. Wrong/missing
+password on an encrypted file → 401. UI in `guide.js` (Export/Import menus
+on the Champ guide page); import always shows the preview's overwrite
+count in a `confirm()` before committing.
 `crawl_state(puuid+queue_id PK, newest_ms, complete)` — resume watermarks
 `participant_metrics(match_id+puuid PK, has_challenges, one REAL col per
 metric key)` — coaching metrics, tracked players only, columns generated
@@ -180,9 +203,9 @@ from `server/metrics.py`
 ## Development rules
 
 - **All notes render as Markdown wherever they are displayed** — session
-  notes, block learnings, block-game notes, matchup notes, and any future
-  note field. Use `renderNotes(...)` (vendored marked) inside an
-  `md-body` element; never show raw/escaped note text in a read-only view.
+  notes, block learnings, block-game notes, matchup notes, champion notes,
+  and any future note field. Use `renderNotes(...)` (vendored marked) inside
+  an `md-body` element; never show raw/escaped note text in a read-only view.
 - **Every user-facing feature adds an entry to `static/changelog.json`**
   (newest first; main functionality only, not tiny tweaks). It drives the 📋
   "What's new" panel; entries newer than the latest GitHub release tag show a
@@ -194,7 +217,7 @@ from `server/metrics.py`
   `ALTER TABLE ... ADD COLUMN` guarded by a `PRAGMA table_info` check in
   `db._migrate`. Never `DROP`, recreate, or bulk-`DELETE`/`UPDATE` tables
   holding user content (sessions, block notes/learnings, matchup notes,
-  rank history) in a way that loses data — a primary-key
+  champion notes, rank history) in a way that loses data — a primary-key
   change is the one case SQLite can't do via `ALTER TABLE`; the
   `matchup_notes` PK-widening migration is the template: rename to `_old`,
   create the new shape, copy every row forward, drop `_old`, all inside

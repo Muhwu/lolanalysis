@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "version": "1.15.0",
+      "date": "2026-07-15",
+      "items": [
+        "General notes section on the Champ guide page, for champion-wide tips that aren't tied to one matchup",
+        "Export/import a champion's whole guide as a JSON file, with an optional password (real encryption, not just obfuscation) — Export/Import menus on the Champ guide page"
+      ]
+    },
+    {
       "version": "1.14.0",
       "date": "2026-07-15",
       "items": [

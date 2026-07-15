@@ -1,9 +1,11 @@
 "use strict";
 /* Champ guide view: pick any champion (full roster, not just ones you've
-   played) and see/edit a guide — Markdown notes, patch version, and one or
-   more full rune pages (primary tree + keystone + 3 minors, secondary tree +
-   2 minors, 3 stat shards) — for every matchup that champion has faced, or
-   add one for a matchup not yet played.
+   played) and see/edit a guide — general notes, and per-matchup Markdown
+   notes, patch version, and one or more full rune pages (primary tree +
+   keystone + 3 minors, secondary tree + 2 minors, 3 stat shards) — for
+   every matchup that champion has faced, or add one for a matchup not yet
+   played. Export/import a champion's whole guide as JSON, optionally
+   password-encrypted.
    Uses globals from app.js: $, getJSON, escapeHtml, displayName, champIcon,
    wrCell, renderNotes, accountParams, setMainView. Uses roster/
    loadChampionRoster/champDisplay from blocks.js for champion-name
@@ -19,6 +21,8 @@ const guideState = {
   draft: null,    // working copy of the guide being edited: {notes, patch_version, runes}
   openRuneIndex: null, // index into draft.runes currently expanded in the picker
   pendingFocus: null,  // opp_champion to focus once the next load completes (deep link)
+  generalNotes: "",     // myChampion's general (non-matchup) Markdown notes
+  editingGeneral: false,
 };
 
 const RUNE_TREES = [];
@@ -74,12 +78,14 @@ async function initGuide() {
     $("#guide-champion").addEventListener("change", (e) => {
       guideState.myChampion = e.target.value;
       guideState.editing = null;
+      guideState.editingGeneral = false;
       loadGuide();
     });
     $("#guide-add-form").addEventListener("submit", (e) => {
       e.preventDefault();
       addGuideMatchup();
     });
+    wireExportImport();
   }
   await loadChampionRoster(); // loadGuideChampionOptions needs the full roster
   await Promise.all([loadGuideChampionOptions(), loadRuneTrees()]);
@@ -111,16 +117,21 @@ async function loadGuide() {
   if (!guideState.myChampion) {
     guideState.matchups = [];
     guideState.guide = {};
+    guideState.generalNotes = "";
     renderGuide();
+    renderGuideGeneral();
     return;
   }
-  const [matchups, guide] = await Promise.all([
+  const [matchups, guide, general] = await Promise.all([
     getJSON(`/api/stats/matchups?${accountParams()}&champion=${encodeURIComponent(guideState.myChampion)}&min_games=1`),
     getJSON(`/api/matchups/notes?my_champion=${encodeURIComponent(guideState.myChampion)}`),
+    getJSON(`/api/champions/notes/${encodeURIComponent(guideState.myChampion)}`),
   ]);
   guideState.matchups = matchups;
   guideState.guide = guide;
+  guideState.generalNotes = general.notes;
   renderGuide();
+  renderGuideGeneral();
 }
 
 function addGuideMatchup() {
@@ -485,4 +496,154 @@ function openGuide(myChampion, oppChampion) {
   guideState.myChampion = myChampion;
   guideState.pendingFocus = oppChampion;
   setMainView("guide");
+}
+
+// ---------- general (non-matchup) notes ----------
+
+function generalNotesBlock() {
+  const champ = guideState.myChampion;
+  const notes = guideState.generalNotes;
+  if (guideState.editingGeneral) {
+    return `<div class="mu-notes">
+      <div class="mu-notes-head"><h4>General ${displayName(champ)} notes</h4></div>
+      <textarea id="guide-general-input" rows="6"
+        placeholder="Markdown supported — build order, itemization, general tips…">${escapeHtml(notes)}</textarea>
+      <div class="session-actions">
+        <button class="preset guide-general-save">Save</button>
+        <button class="preset guide-general-cancel">Cancel</button>
+        <span class="muted guide-general-status"></span>
+      </div>
+    </div>`;
+  }
+  const body = notes
+    ? `<div class="md-body">${renderNotes(notes)}</div>`
+    : `<p class="muted">No general notes for ${displayName(champ)} yet.</p>`;
+  return `<div class="mu-notes">
+    <div class="mu-notes-head"><h4>General ${displayName(champ)} notes</h4>
+      <button class="preset icon-btn guide-general-edit" title="Edit general notes" aria-label="Edit general notes">✎</button>
+    </div>${body}</div>`;
+}
+
+function renderGuideGeneral() {
+  const target = $("#guide-general-notes");
+  target.innerHTML = guideState.myChampion ? generalNotesBlock() : "";
+  target.querySelectorAll(".guide-general-edit").forEach((btn) =>
+    btn.addEventListener("click", () => { guideState.editingGeneral = true; renderGuideGeneral(); }));
+  target.querySelectorAll(".guide-general-cancel").forEach((btn) =>
+    btn.addEventListener("click", () => { guideState.editingGeneral = false; renderGuideGeneral(); }));
+  target.querySelectorAll(".guide-general-save").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const notes = $("#guide-general-input").value;
+      const response = await fetch(`/api/champions/notes/${encodeURIComponent(guideState.myChampion)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        btn.parentElement.querySelector(".guide-general-status").textContent =
+          body.detail || `error ${response.status}`;
+        return;
+      }
+      guideState.generalNotes = notes;
+      guideState.editingGeneral = false;
+      renderGuideGeneral();
+    }));
+}
+
+// ---------- export / import ----------
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function wireExportImport() {
+  $("#guide-export-password-toggle").addEventListener("change", (e) => {
+    $("#guide-export-password").classList.toggle("hidden", !e.target.checked);
+  });
+
+  $("#guide-export-btn").addEventListener("click", async () => {
+    if (!guideState.myChampion) return;
+    const usePassword = $("#guide-export-password-toggle").checked;
+    const password = usePassword ? $("#guide-export-password").value : null;
+    if (usePassword && !password) {
+      alert('Enter a password, or untick "Password protect".');
+      return;
+    }
+    const response = await fetch("/api/matchups/notes/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ my_champion: guideState.myChampion, password }),
+    });
+    if (!response.ok) {
+      alert("Export failed.");
+      return;
+    }
+    downloadBlob(await response.blob(), `champ-guide-${guideState.myChampion.toLowerCase()}.json`);
+    $("#guide-export-password").value = "";
+  });
+
+  $("#guide-import-btn").addEventListener("click", async () => {
+    const status = $("#guide-import-status");
+    status.textContent = "";
+    const file = $("#guide-import-file").files[0];
+    if (!file) { status.textContent = "choose a file first"; return; }
+    let data;
+    try {
+      data = JSON.parse(await file.text());
+    } catch {
+      status.textContent = "not valid JSON";
+      return;
+    }
+    const password = $("#guide-import-password").value || undefined;
+    const preview = await fetch("/api/matchups/notes/import/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data, password }),
+    });
+    if (!preview.ok) {
+      const body = await preview.json().catch(() => ({}));
+      status.textContent = preview.status === 401
+        ? "password required or incorrect" : (body.detail || `error ${preview.status}`);
+      return;
+    }
+    const info = await preview.json();
+    const overwriteNote = info.will_overwrite.length
+      ? ` ${info.will_overwrite.length} of these will overwrite existing guides: ${info.will_overwrite.map(displayName).join(", ")}.`
+      : "";
+    const confirmMsg = `Import ${info.opponents.length} matchup guide(s) for ` +
+      `${displayName(info.my_champion)}${info.has_general_notes ? " plus its general notes" : ""}?${overwriteNote}`;
+    if (!confirm(confirmMsg)) { status.textContent = "cancelled"; return; }
+    const result = await fetch("/api/matchups/notes/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data, password }),
+    });
+    if (!result.ok) {
+      const body = await result.json().catch(() => ({}));
+      status.textContent = body.detail || `error ${result.status}`;
+      return;
+    }
+    status.textContent = "imported!";
+    $("#guide-import-file").value = "";
+    $("#guide-import-password").value = "";
+    guideState.editing = null;
+    guideState.draft = null;
+    guideState.openRuneIndex = null;
+    guideState.editingGeneral = false;
+    if (info.my_champion === guideState.myChampion) {
+      await loadGuide();
+    } else {
+      guideState.myChampion = info.my_champion;
+      await loadGuideChampionOptions();
+      await loadGuide();
+    }
+  });
 }

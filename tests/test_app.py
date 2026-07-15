@@ -688,6 +688,105 @@ def test_matchup_notes_accept_match_v5_champion_spelling(client):
     assert client.get("/api/matchups/notes?my_champion=Gwen").json()["FiddleSticks"]["notes"] == "ban worthy"
 
 
+def test_champion_general_notes_endpoints(client):
+    assert client.get("/api/champions/notes/Gwen").json() == {"notes": ""}
+    r = client.put("/api/champions/notes/Gwen", json={"notes": "- always take Conqueror"})
+    assert r.status_code == 200
+    assert client.get("/api/champions/notes/Gwen").json() == {"notes": "- always take Conqueror"}
+    client.put("/api/champions/notes/Gwen", json={"notes": ""})  # blank deletes
+    assert client.get("/api/champions/notes/Gwen").json() == {"notes": ""}
+    assert client.put("/api/champions/notes/NotAChamp", json={"notes": "x"}).status_code == 400
+    assert client.put("/api/champions/notes/Gwen", json={}).status_code == 400
+
+
+def _seed_champ_guide(client):
+    client.put("/api/champions/notes/Gwen", json={"notes": "general Gwen tips"})
+    client.put("/api/matchups/notes/Gwen/Darius", json={
+        "notes": "respect level 2", "runes": [CONQ_PAGE], "patch_version": "14.14"})
+    client.put("/api/matchups/notes/Gwen/Renekton", json={"notes": "easy lane"})
+
+
+def test_champ_guide_export_plain(client):
+    _seed_champ_guide(client)
+    r = client.post("/api/matchups/notes/export", json={"my_champion": "Gwen"})
+    assert r.status_code == 200
+    assert "attachment" in r.headers["content-disposition"]
+    assert "champ-guide-gwen.json" in r.headers["content-disposition"]
+    data = r.json()
+    assert data["kind"] == "champ-guide-export"
+    assert data["my_champion"] == "Gwen"
+    assert data["encrypted"] is False
+    assert data["general_notes"] == "general Gwen tips"
+    assert data["guide"]["Darius"]["notes"] == "respect level 2"
+    assert data["guide"]["Renekton"]["notes"] == "easy lane"
+
+
+def test_champ_guide_export_encrypted_hides_plaintext(client):
+    _seed_champ_guide(client)
+    r = client.post("/api/matchups/notes/export",
+                     json={"my_champion": "Gwen", "password": "hunter2"})
+    data = r.json()
+    assert data["encrypted"] is True
+    assert "guide" not in data and "general_notes" not in data
+    assert "ciphertext" in data and "salt" in data
+    raw = r.text
+    assert "respect level 2" not in raw  # plaintext notes must not leak into the encrypted file
+
+
+def test_champ_guide_import_plain_round_trip(client):
+    _seed_champ_guide(client)
+    export = client.post("/api/matchups/notes/export", json={"my_champion": "Gwen"}).json()
+    # import into a fresh champion to prove the round trip reproduces the data
+    export["my_champion"] = "Camille"
+    preview = client.post("/api/matchups/notes/import/preview", json={"data": export}).json()
+    assert preview["my_champion"] == "Camille"
+    assert sorted(preview["opponents"]) == ["Darius", "Renekton"]
+    assert preview["will_overwrite"] == []
+    assert preview["has_general_notes"] is True
+    r = client.post("/api/matchups/notes/import", json={"data": export})
+    assert r.status_code == 200
+    assert r.json() == {"imported": 2}
+    assert client.get("/api/champions/notes/Camille").json()["notes"] == "general Gwen tips"
+    guide = client.get("/api/matchups/notes?my_champion=Camille").json()
+    assert guide["Darius"]["runes"] == [CONQ_PAGE]
+    assert guide["Renekton"]["notes"] == "easy lane"
+
+
+def test_champ_guide_import_detects_overwrites(client):
+    _seed_champ_guide(client)
+    export = client.post("/api/matchups/notes/export", json={"my_champion": "Gwen"}).json()
+    client.put("/api/matchups/notes/Gwen/Darius", json={"notes": "already had different notes"})
+    preview = client.post("/api/matchups/notes/import/preview", json={"data": export}).json()
+    # both matchups already existed for Gwen before the import (from the seed)
+    assert sorted(preview["will_overwrite"]) == ["Darius", "Renekton"]
+    client.post("/api/matchups/notes/import", json={"data": export})
+    assert client.get("/api/matchups/notes?my_champion=Gwen").json()["Darius"]["notes"] == "respect level 2"
+
+
+def test_champ_guide_import_encrypted_requires_correct_password(client):
+    _seed_champ_guide(client)
+    export = client.post("/api/matchups/notes/export",
+                          json={"my_champion": "Gwen", "password": "hunter2"}).json()
+    export["my_champion"] = "Camille"
+    assert client.post("/api/matchups/notes/import/preview",
+                       json={"data": export}).status_code == 401  # no password
+    assert client.post("/api/matchups/notes/import/preview",
+                       json={"data": export, "password": "wrong"}).status_code == 401
+    r = client.post("/api/matchups/notes/import/preview",
+                    json={"data": export, "password": "hunter2"})
+    assert r.status_code == 200
+    assert sorted(r.json()["opponents"]) == ["Darius", "Renekton"]
+    assert client.post("/api/matchups/notes/import",
+                       json={"data": export, "password": "hunter2"}).json() == {"imported": 2}
+    assert client.get("/api/matchups/notes?my_champion=Camille").json()["Darius"]["runes"] == [CONQ_PAGE]
+
+
+def test_champ_guide_import_rejects_non_export_file(client):
+    assert client.post("/api/matchups/notes/import",
+                       json={"data": {"not": "an export"}}).status_code == 400
+    assert client.post("/api/matchups/notes/import", json={}).status_code == 400
+
+
 def test_close_block_rejects_empty_block(client):
     import os
     conn = db.connect(os.environ["LOL_DB_PATH"])
