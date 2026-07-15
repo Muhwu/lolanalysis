@@ -383,12 +383,16 @@ function renderRecent(recent) {
       <td><span class="result-pill ${g.win ? "win" : "loss"}">${g.win ? "W" : "L"}</span></td>
       <td>${g.kills}/${g.deaths}/${g.assists}</td>
       <td>${fmtDuration(g.game_duration_s)}</td>
+      <td class="recent-runes-cell">${g.runes
+        ? `<div class="recent-runes-cell-inner">${
+            runePageIcons(g.runes, { keystoneSize: 18, minorSize: 14, treeSize: 16, shardSize: 12 })}</div>`
+        : `<span class="muted">–</span>`}</td>
       <td><button class="preset promote-btn" data-match="${g.match_id}"
         data-puuid="${g.my_puuid}" title="Add to current block">+ Block</button></td>
     </tr>`).join("");
   target.innerHTML = `<div class="table-wrap"><table>
     <thead><tr><th>Date</th>${multi ? "<th>Account</th>" : ""}<th>Queue</th><th>Me</th><th>Opponent</th><th>Opp. rank</th>
-    <th>Result</th><th>K/D/A</th><th>Length</th><th></th></tr></thead>
+    <th>Result</th><th>K/D/A</th><th>Length</th><th>Runes</th><th></th></tr></thead>
     <tbody>${body}</tbody></table></div>`;
   wirePromoteButtons(target);
 }
@@ -689,7 +693,7 @@ function renderProgress(segments) {
   wirePromoteButtons(target);
 }
 
-const sessionUi = { expanded: new Set(), editing: null };
+const sessionUi = { expanded: new Set(), editing: null, clips: new Map() };
 
 function escapeHtml(text) {
   return String(text).replace(/[&<>"']/g,
@@ -700,6 +704,73 @@ function renderNotes(notes) {
   if (!notes) return `<p class="muted">No notes yet — click edit to add some.</p>`;
   if (typeof marked !== "undefined") return marked.parse(notes);
   return `<pre>${escapeHtml(notes)}</pre>`; // fallback if vendor lib missing
+}
+
+// ---------- clips (shared by coaching sessions and block games) ----------
+
+function clipsSection(ownerType, ownerId, clips) {
+  const items = clips === undefined
+    ? `<p class="muted">Loading…</p>`
+    : (clips.length ? clips.map((c) => `<div class="clip-item">
+        <div class="clip-item-head">
+          <span class="clip-label">${c.label ? escapeHtml(c.label) : `<span class="muted">clip</span>`}</span>
+          <button class="preset icon-btn clip-delete" data-id="${c.id}"
+            title="Delete clip" aria-label="Delete clip">🗑</button>
+        </div>
+        ${c.kind === "upload"
+          ? `<video controls preload="metadata" src="${escapeHtml(c.play_url)}"></video>`
+          : `<a href="${escapeHtml(c.play_url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(c.play_url)}</a>`}
+      </div>`).join("") : `<p class="muted">No clips yet.</p>`);
+  return `<div class="clips-section" data-owner-type="${ownerType}" data-owner-id="${ownerId}">
+    <h5>Clips</h5>
+    <div class="clips-list">${items}</div>
+    <form class="clip-add-form">
+      <input type="text" class="clip-label-input" placeholder='Label (optional) — e.g. "wave management @14min"'>
+      <div class="clip-add-row">
+        <input type="file" class="clip-file-input" accept=".mp4,.mov,.webm,.m4v,video/mp4,video/quicktime,video/webm">
+        <span class="muted">or</span>
+        <input type="url" class="clip-url-input" placeholder="paste a link (YouTube, Twitch…)">
+        <button type="submit" class="preset">Add clip</button>
+      </div>
+      <span class="muted clip-add-status"></span>
+    </form>
+  </div>`;
+}
+
+// reload(ownerType, ownerId): async callback the caller supplies to refetch
+// that owner's clips into its own cache and re-render its view
+function wireClipsSection(container, reload) {
+  container.querySelectorAll(".clip-delete").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      if (!confirm("Delete this clip?")) return;
+      await fetch(`/api/clips/${btn.dataset.id}`, { method: "DELETE" });
+      const section = btn.closest(".clips-section");
+      await reload(section.dataset.ownerType, section.dataset.ownerId);
+    }));
+  container.querySelectorAll(".clip-add-form").forEach((form) =>
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const section = form.closest(".clips-section");
+      const status = form.querySelector(".clip-add-status");
+      const label = form.querySelector(".clip-label-input").value;
+      const file = form.querySelector(".clip-file-input").files[0];
+      const url = form.querySelector(".clip-url-input").value.trim();
+      if (!file && !url) { status.textContent = "add a file or a link"; return; }
+      if (file && url) { status.textContent = "choose either a file or a link, not both"; return; }
+      const fd = new FormData();
+      fd.set("owner_type", section.dataset.ownerType);
+      fd.set("owner_id", section.dataset.ownerId);
+      fd.set("label", label);
+      if (file) fd.set("file", file); else fd.set("url", url);
+      status.textContent = "adding…";
+      const response = await fetch("/api/clips", { method: "POST", body: fd });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        status.textContent = body.detail || `error ${response.status}`;
+        return;
+      }
+      await reload(section.dataset.ownerType, section.dataset.ownerId);
+    }));
 }
 
 function sessionCard(s) {
@@ -720,6 +791,8 @@ function sessionCard(s) {
   } else if (expanded) {
     body = `<div class="session-body md-body">${renderNotes(s.notes)}</div>`;
   }
+  const clips = (expanded || editing)
+    ? clipsSection("session", s.id, sessionUi.clips.get(s.id)) : "";
   return `<div class="session-card">
     <div class="session-head">
       <button class="preset session-toggle" data-id="${s.id}" aria-expanded="${expanded}">
@@ -732,7 +805,13 @@ function sessionCard(s) {
       </span>
     </div>
     ${body}
+    ${clips}
   </div>`;
+}
+
+async function ensureSessionClips(id) {
+  if (sessionUi.clips.has(id)) return;
+  sessionUi.clips.set(id, await getJSON(`/api/clips?owner_type=session&owner_id=${id}`));
 }
 
 function renderSessions(sessionRows) {
@@ -743,16 +822,26 @@ function renderSessions(sessionRows) {
   }
   target.innerHTML = sessionRows.map(sessionCard).join("");
   target.querySelectorAll(".session-toggle").forEach((btn) =>
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const id = +btn.dataset.id;
-      sessionUi.expanded.has(id) ? sessionUi.expanded.delete(id) : sessionUi.expanded.add(id);
-      if (sessionUi.editing === id) sessionUi.editing = null;
+      if (sessionUi.expanded.has(id)) {
+        sessionUi.expanded.delete(id);
+        if (sessionUi.editing === id) sessionUi.editing = null;
+        renderSessions(sessionRows);
+        return;
+      }
+      sessionUi.expanded.add(id);
+      renderSessions(sessionRows); // show "Loading…" immediately
+      await ensureSessionClips(id);
       renderSessions(sessionRows);
     }));
   target.querySelectorAll(".session-edit").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      sessionUi.editing = +btn.dataset.id;
-      sessionUi.expanded.add(+btn.dataset.id);
+    btn.addEventListener("click", async () => {
+      const id = +btn.dataset.id;
+      sessionUi.editing = id;
+      sessionUi.expanded.add(id);
+      renderSessions(sessionRows);
+      await ensureSessionClips(id);
       renderSessions(sessionRows);
     }));
   target.querySelectorAll(".session-cancel").forEach((btn) =>
@@ -782,6 +871,11 @@ function renderSessions(sessionRows) {
       await fetch(`/api/sessions/${btn.dataset.id}`, { method: "DELETE" });
       loadProgress();
     }));
+  wireClipsSection(target, async (ownerType, ownerId) => {
+    sessionUi.clips.delete(+ownerId);
+    await ensureSessionClips(+ownerId);
+    renderSessions(sessionRows);
+  });
 }
 
 async function unionFilterOptions() {
@@ -1260,7 +1354,10 @@ async function init(firstLoad = true) {
     if (!state.accounts.length) state.accounts = null;
   }
   renderAccountSelector();
-  await loadFilterOptions();
+  // loadRuneTrees (guide.js) is idempotent — populates RUNE_TREES/SHARD_ROWS
+  // for the recent-games rune icons on this Overview tab too, even if the
+  // user never visits the Champ guide tab
+  await Promise.all([loadFilterOptions(), loadRuneTrees()]);
   await refresh();
   if (firstLoad && location.hash === "#matchups") setMainView("matchups");
   if (firstLoad && location.hash === "#progress") setMainView("progress");

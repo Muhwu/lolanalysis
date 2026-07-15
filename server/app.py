@@ -4,11 +4,12 @@ import os
 import sqlite3
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import config, crypto, db, rune_data, stats
@@ -47,6 +48,22 @@ def get_db_path() -> Path:
 
 def get_conn():
     return db.connect(get_db_path())
+
+
+def get_clips_dir() -> Path:
+    d = get_db_path().parent / "clips"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+MAX_CLIP_BYTES = 50 * 1024 * 1024  # 50 MB
+ALLOWED_CLIP_EXTENSIONS = {".mp4", ".mov", ".webm", ".m4v"}
+CLIP_OWNER_TABLES = {"session": "coaching_sessions", "block_game": "block_games"}
+
+
+def _unlink_clip_files(file_names):
+    for name in file_names:
+        (get_clips_dir() / name).unlink(missing_ok=True)
 
 
 def parse_time_range(params: dict, now_ms: int | None = None):
@@ -356,8 +373,10 @@ def api_export_sessions():
 def api_delete_session(session_id: int):
     conn = get_conn()
     try:
+        freed = db.delete_clips_for_owner(conn, "session", session_id)
         if not db.delete_session(conn, session_id):
             raise HTTPException(404, "no such session")
+        _unlink_clip_files(freed)
         return {"deleted": True}
     finally:
         conn.close()
@@ -949,8 +968,10 @@ def api_update_block_game(entry_id: int, body: dict):
 def api_delete_block_game(entry_id: int):
     conn = get_conn()
     try:
+        freed = db.delete_clips_for_owner(conn, "block_game", entry_id)
         if not db.delete_block_game(conn, entry_id):
             raise HTTPException(404, "no such block game")
+        _unlink_clip_files(freed)
         return {"deleted": True}
     finally:
         conn.close()
@@ -960,11 +981,100 @@ def api_delete_block_game(entry_id: int):
 def api_delete_block(block_id: int):
     conn = get_conn()
     try:
+        freed = db.delete_clips_for_block(conn, block_id)
         if not db.delete_block(conn, block_id):
             raise HTTPException(404, "no such block")
+        _unlink_clip_files(freed)
         return {"deleted": True}
     finally:
         conn.close()
+
+
+def _clip_dict(row):
+    d = dict(row)
+    if d["kind"] == "upload":
+        d["play_url"] = f"/api/clips/{d['id']}/file"
+    else:
+        d["play_url"] = d["url"]
+    return d
+
+
+@app.get("/api/clips")
+def api_list_clips(owner_type: str, owner_id: int):
+    if owner_type not in CLIP_OWNER_TABLES:
+        raise HTTPException(400, f"owner_type must be one of {sorted(CLIP_OWNER_TABLES)}")
+    conn = get_conn()
+    try:
+        return [_clip_dict(r) for r in db.list_clips(conn, owner_type, owner_id)]
+    finally:
+        conn.close()
+
+
+@app.post("/api/clips")
+async def api_add_clip(owner_type: str = Form(...), owner_id: int = Form(...),
+                        label: str = Form(""), url: str | None = Form(None),
+                        file: UploadFile | None = File(None)):
+    if owner_type not in CLIP_OWNER_TABLES:
+        raise HTTPException(400, f"owner_type must be one of {sorted(CLIP_OWNER_TABLES)}")
+    if bool(file) == bool(url):
+        raise HTTPException(400, "provide exactly one of: file, url")
+    conn = get_conn()
+    try:
+        owner_exists = conn.execute(
+            f"SELECT 1 FROM {CLIP_OWNER_TABLES[owner_type]} WHERE id=?", (owner_id,)
+        ).fetchone()
+        if not owner_exists:
+            raise HTTPException(404, f"no such {owner_type}")
+        if file:
+            ext = Path(file.filename or "").suffix.lower()
+            if ext not in ALLOWED_CLIP_EXTENSIONS:
+                raise HTTPException(
+                    400, f"unsupported file type {ext or '(none)'} — "
+                         f"allowed: {', '.join(sorted(ALLOWED_CLIP_EXTENSIONS))}")
+            data = await file.read(MAX_CLIP_BYTES + 1)
+            if len(data) > MAX_CLIP_BYTES:
+                raise HTTPException(413, "clip exceeds the 50 MB limit")
+            stored_name = f"{uuid.uuid4().hex}{ext}"
+            (get_clips_dir() / stored_name).write_bytes(data)
+            clip_id = db.add_clip(conn, owner_type, owner_id, label, "upload",
+                                  file_name=stored_name)
+        else:
+            if not url.startswith(("http://", "https://")):
+                raise HTTPException(400, "url must start with http:// or https://")
+            clip_id = db.add_clip(conn, owner_type, owner_id, label, "link", url=url)
+        return _clip_dict(db.get_clip(conn, clip_id))
+    finally:
+        conn.close()
+
+
+@app.get("/api/clips/{clip_id}/file")
+def api_clip_file(clip_id: int):
+    conn = get_conn()
+    try:
+        clip = db.get_clip(conn, clip_id)
+    finally:
+        conn.close()
+    if not clip or clip["kind"] != "upload":
+        raise HTTPException(404, "clip not found")
+    path = get_clips_dir() / clip["file_name"]
+    if not path.exists():
+        raise HTTPException(404, "clip file missing on disk")
+    return FileResponse(path)
+
+
+@app.delete("/api/clips/{clip_id}")
+def api_delete_clip(clip_id: int):
+    conn = get_conn()
+    try:
+        clip = db.get_clip(conn, clip_id)
+        if not clip:
+            raise HTTPException(404, "clip not found")
+        db.delete_clip(conn, clip_id)
+    finally:
+        conn.close()
+    if clip["kind"] == "upload" and clip["file_name"]:
+        _unlink_clip_files([clip["file_name"]])
+    return {"deleted": True}
 
 
 def _run_crawl():

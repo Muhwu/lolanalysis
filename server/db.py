@@ -124,6 +124,18 @@ CREATE TABLE IF NOT EXISTS participant_runes (
     PRIMARY KEY (match_id, puuid)
 );
 
+CREATE TABLE IF NOT EXISTS clips (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_type TEXT NOT NULL CHECK (owner_type IN ('session', 'block_game')),
+    owner_id INTEGER NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL CHECK (kind IN ('upload', 'link')),
+    file_name TEXT,
+    url TEXT,
+    created_at_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_clips_owner ON clips(owner_type, owner_id);
+
 CREATE TABLE IF NOT EXISTS rank_history (
     puuid TEXT NOT NULL,
     solo_tier TEXT,
@@ -710,3 +722,61 @@ def set_crawl_watermark(conn, puuid, queue_id, newest_ms, complete):
                  complete=excluded.complete""",
             (puuid, queue_id, newest_ms, int(complete)),
         )
+
+
+def add_clip(conn, owner_type, owner_id, label, kind, file_name=None, url=None):
+    """owner_type: 'session' | 'block_game'. kind: 'upload' (file_name set,
+    stored on disk by the caller — db.py has no filesystem knowledge) |
+    'link' (url set)."""
+    with conn:
+        cursor = conn.execute(
+            f"""INSERT INTO clips (owner_type, owner_id, label, kind, file_name, url, created_at_ms)
+                VALUES (?, ?, ?, ?, ?, ?, {_now_expr()})""",
+            (owner_type, owner_id, label, kind, file_name, url))
+    return cursor.lastrowid
+
+
+def list_clips(conn, owner_type, owner_id):
+    return conn.execute(
+        "SELECT * FROM clips WHERE owner_type=? AND owner_id=? ORDER BY created_at_ms",
+        (owner_type, owner_id)).fetchall()
+
+
+def get_clip(conn, clip_id):
+    return conn.execute("SELECT * FROM clips WHERE id=?", (clip_id,)).fetchone()
+
+
+def delete_clip(conn, clip_id):
+    with conn:
+        cursor = conn.execute("DELETE FROM clips WHERE id=?", (clip_id,))
+    return cursor.rowcount > 0
+
+
+def delete_clips_for_owner(conn, owner_type, owner_id):
+    """Delete all clips for one session/block_game (its own record is being
+    deleted by the caller). Returns the file_names of any 'upload' clips so
+    the caller can unlink them from disk — db.py never touches the
+    filesystem beyond sqlite itself."""
+    rows = conn.execute(
+        "SELECT file_name FROM clips WHERE owner_type=? AND owner_id=? AND kind='upload'",
+        (owner_type, owner_id)).fetchall()
+    with conn:
+        conn.execute("DELETE FROM clips WHERE owner_type=? AND owner_id=?",
+                     (owner_type, owner_id))
+    return [r["file_name"] for r in rows if r["file_name"]]
+
+
+def delete_clips_for_block(conn, block_id):
+    """Delete all clips attached to any game in a block (the block and its
+    block_games rows are being deleted by the caller). Returns file_names of
+    any 'upload' clips to unlink."""
+    rows = conn.execute(
+        """SELECT c.file_name FROM clips c
+           JOIN block_games bg ON bg.id = c.owner_id
+           WHERE c.owner_type='block_game' AND bg.block_id=? AND c.kind='upload'""",
+        (block_id,)).fetchall()
+    with conn:
+        conn.execute(
+            """DELETE FROM clips WHERE owner_type='block_game' AND owner_id IN
+               (SELECT id FROM block_games WHERE block_id=?)""", (block_id,))
+    return [r["file_name"] for r in rows if r["file_name"]]

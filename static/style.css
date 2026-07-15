@@ -177,6 +177,13 @@ th, td {
 }
 thead th { border-top: none; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
 th:first-child, td:first-child { text-align: left; }
+.recent-runes-cell { white-space: normal; max-width: 200px; }
+.recent-runes-cell-inner {
+  display: flex; align-items: center; gap: 2px; flex-wrap: wrap; justify-content: center;
+}
+.recent-runes-cell img { border-radius: 50%; background: var(--surface-1); }
+.recent-runes-cell .rune-page-minors { gap: 1px; }
+.recent-runes-cell .rune-page-shards { gap: 1px; margin-left: 3px; }
 tr.rank-header td {
   text-align: left;
   background: var(--accent-wash);
@@ -855,3 +862,26 @@ td.rank-cell { font-size: 12px; line-height: 1.5; }
   color: var(--muted);
 }
 footer { margin-top: 36px; border-top: 1px solid var(--grid); padding-top: 10px; }
+
+/* ---------- clips (coaching sessions + block games) ---------- */
+.clips-section { margin-top: 14px; max-width: 520px; }
+.clips-section h5 { margin: 0 0 6px; font-size: 12px; color: var(--text-secondary); }
+.clips-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+.clip-item {
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+  background: var(--surface-1);
+}
+.clip-item-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.clip-label { font-size: 13px; font-weight: 600; flex: 1; }
+.clip-item video { width: 100%; max-height: 260px; border-radius: 6px; display: block; }
+.clip-item a { font-size: 13px; word-break: break-all; }
+.clip-add-form { display: flex; flex-direction: column; gap: 6px; }
+.clip-add-form input[type="text"], .clip-add-form input[type="url"] {
+  font: inherit; font-size: 13px; padding: 4px 8px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface-1); color: var(--text-primary);
+}
+.clip-add-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.clip-add-row input[type="file"] { font-size: 12px; max-width: 200px; }
+.clip-add-row input[type="url"] { flex: 1; min-width: 160px; }
+.clip-add-status { font-size: 12px; }

@@ -168,6 +168,20 @@ def test_summary_counts_and_champion_breakdown(conn):
     assert s["recent"][0]["opp_champion"] in ("Darius",)
 
 
+def test_summary_recent_includes_runes_actually_played(conn):
+    match_id, _ = add_match(conn, opp_champ="Darius")
+    s = stats.summary(conn, ME)
+    assert s["recent"][0]["runes"] is None  # nothing recorded for this game yet
+    db.insert_participant_runes(conn, match_id, ME, {
+        "label": "", "primary_tree": "Precision", "keystone": "Conqueror",
+        "primary_runes": ["Triumph", "Legend: Alacrity", "Last Stand"],
+        "secondary_tree": "Resolve", "secondary_runes": ["Bone Plating", "Overgrowth"],
+        "shards": ["Adaptive Force", "Armor", "Health"],
+    })
+    s = stats.summary(conn, ME)
+    assert s["recent"][0]["runes"]["keystone"] == "Conqueror"
+
+
 DAY_MS = 86_400_000
 # 2026-06-28 00:00 UTC
 S1_MS = 1_782_604_800_000

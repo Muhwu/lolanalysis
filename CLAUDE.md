@@ -31,11 +31,10 @@ change, not a crawler change.
 - **Dev API key expires every 24 h.** 403 → `ApiKeyExpiredError`. Refresh at
   developer.riotgames.com, update `RIOT_API_KEY=` in `.env` (gitignored).
 - **`cryptography` is a real (compiled) dependency**, added for champ-guide
-  export/import encryption (`server/crypto.py`). It ships PyInstaller-
-  compatible wheels/hooks for Windows/macOS/Linux and hasn't caused build
-  issues locally, but hasn't been verified through a full CI `build.yml` run
-  yet — if a packaged build ever fails to import `cryptography`, that's the
-  first thing to check.
+  export/import encryption (`server/crypto.py`). Confirmed building clean
+  through CI `build.yml` on all three OSes. `python-multipart` was added
+  for the clips feature's file-upload endpoints (`Form`/`File`/`UploadFile`
+  in app.py) — FastAPI raises at startup if it's missing, easy to mis-diagnose.
 - **Rate limits: 20 req/1 s and 100 req/2 min**, enforced by
   `RateLimiter` in `server/riot_client.py`. Never bypass it; test crawler
   changes with `--limit 5` before any full crawl.
@@ -95,7 +94,9 @@ change, not a crawler change.
   in `db._migrate`). `PATCH /api/sessions/{id}` edits them;
   `GET /api/sessions/export.md` produces the all-sessions Markdown export.
   Markdown renders client-side via vendored `static/vendor/marked.min.js`
-  (no CDN at runtime; update by re-downloading from jsdelivr).
+  (no CDN at runtime; update by re-downloading from jsdelivr). A session
+  card's Clips section (see `clips` table below) only loads when the card
+  is expanded.
 - Segment rows expand to per-game lists: `stats.games_in_range(conn, puuids,
   from_ms, to_ms, ...)` behind `GET /api/stats/games?from_ms=&to_ms=` (ms
   bounds; client passes `to_ms-1` for half-open segments); frontend caches
@@ -129,7 +130,8 @@ change, not a crawler change.
   `GET /api/blocks/game-notes?opp_champion=` (read-only; feeds the matchup
   Block-notes section, `focusBlock(id)` in `blocks.js` deep-links a block
   card). UI in `blocks.js`; "+ Block" promote buttons on Recent-games and
-  segment game rows.
+  segment game rows. A block game's Clips section (see `clips` table below)
+  lives in its per-game stats panel, loaded together on first expand.
 - `static/` — no build step; state + fetch + innerHTML render in `app.js`;
   matchups view (own tab: expanded rows with Overview [win/loss strip + block
   notes] / Games tabs; a 📖 link per row — shown only when a specific "My
@@ -214,9 +216,27 @@ page; `runes` is `''` when a match legitimately had no perks data (so
 `Crawler.backfill_runes()` doesn't keep re-fetching it). Populated inline
 during crawl (`Crawler._store_runes`, alongside `_store_metrics`); backfill
 via `./crawl.sh --backfill-runes`. Joined into `stats._BASE` (alias `myr`)
-and surfaced as `runes` (decoded, or `None`) on every row from
-`GET /api/stats/games` — the Champ guide page's per-matchup "Recent games"
-column renders these next to the planned rune pages.
+and surfaced as `runes` (decoded, or `None`) on every row from both
+`GET /api/stats/games` (Champ guide "Recent games" column) and
+`stats.summary()`'s `recent` (Overview tab's "Recent games" table, its own
+`runes` cell) — `runePageIcons()` (guide.js) renders the icon strip in both.
+`clips(id PK, owner_type CHECK IN ('session','block_game'), owner_id, label,
+kind CHECK IN ('upload','link'), file_name, url, created_at_ms)` — 1-minute
+video clips attached to a coaching session or a specific block game (not
+the whole session/block — "specific parts"). `kind='upload'` stores the
+file under `<db_dir>/clips/<uuid><ext>` (50 MB cap, `.mp4`/`.mov`/`.webm`/
+`.m4v` only — `get_clips_dir()` in app.py, sibling to the sqlite file, so
+it moves with `LOL_DB_PATH`/the packaged app-data dir); `kind='link'` just
+stores a pasted URL (YouTube/Twitch/etc). API: `GET/POST /api/clips`,
+`GET /api/clips/{id}/file` (serves the uploaded bytes), `DELETE
+/api/clips/{id}`. Deleting the owning session/block/block_game cascades
+to its clips *and* unlinks their files (`db.delete_clips_for_owner` /
+`delete_clips_for_block`, called before the owning-row delete in app.py —
+db.py never touches the filesystem, app.py does the unlink). Shared UI in
+`app.js` (`clipsSection`/`wireClipsSection`, used by both the Coaching
+progress session cards and `blocks.js`'s per-game stats panel) — clips
+only fetch when that session/game is expanded, matching the rest of the
+app's lazy-load convention.
 
 ## Development rules
 

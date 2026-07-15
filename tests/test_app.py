@@ -874,3 +874,101 @@ def test_block_gap_settings_validation(client):
     assert _put_settings(client, block_gap_hours=-1).status_code == 400
     assert _put_settings(client, block_gap_hours=999).status_code == 400
     assert _put_settings(client, block_gap_confirm="yes").status_code == 400
+
+
+# ---------- clips ----------
+
+def _make_session(client):
+    return client.post("/api/sessions", json={"date": "2026-06-28", "title": "waves"}).json()["id"]
+
+
+def _make_block_game_entry(client):
+    game = client.get("/api/stats/games").json()[0]
+    resp = client.post("/api/blocks/games",
+                       json={"match_id": game["match_id"], "puuid": game["my_puuid"]})
+    block_id = resp.json()["block_id"]
+    entry = client.get("/api/blocks").json()["blocks"][0]["games"][0]
+    return entry["entry_id"], block_id
+
+
+def test_clip_link_roundtrip_for_session(client):
+    session_id = _make_session(client)
+    assert client.get(f"/api/clips?owner_type=session&owner_id={session_id}").json() == []
+    r = client.post("/api/clips", data={
+        "owner_type": "session", "owner_id": session_id,
+        "label": "wave management @14min", "url": "https://youtu.be/abc123",
+    })
+    assert r.status_code == 200
+    clip = r.json()
+    assert clip["kind"] == "link"
+    assert clip["play_url"] == "https://youtu.be/abc123"
+    assert clip["label"] == "wave management @14min"
+    clips = client.get(f"/api/clips?owner_type=session&owner_id={session_id}").json()
+    assert len(clips) == 1
+    assert client.delete(f"/api/clips/{clip['id']}").status_code == 200
+    assert client.get(f"/api/clips?owner_type=session&owner_id={session_id}").json() == []
+
+
+def test_clip_upload_roundtrip_for_block_game(client):
+    entry_id, _ = _make_block_game_entry(client)
+    r = client.post("/api/clips",
+                    data={"owner_type": "block_game", "owner_id": entry_id, "label": "dive call"},
+                    files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")})
+    assert r.status_code == 200
+    clip = r.json()
+    assert clip["kind"] == "upload"
+    assert clip["play_url"] == f"/api/clips/{clip['id']}/file"
+    file_resp = client.get(clip["play_url"])
+    assert file_resp.status_code == 200
+    assert file_resp.content == b"fake video bytes"
+    assert client.delete(f"/api/clips/{clip['id']}").status_code == 200
+    assert client.get(clip["play_url"]).status_code == 404  # file removed from disk too
+
+
+def test_clip_upload_rejects_oversize_and_bad_extension(client):
+    session_id = _make_session(client)
+    big = b"x" * (50 * 1024 * 1024 + 1)
+    r = client.post("/api/clips", data={"owner_type": "session", "owner_id": session_id},
+                    files={"file": ("clip.mp4", big, "video/mp4")})
+    assert r.status_code == 413
+    r = client.post("/api/clips", data={"owner_type": "session", "owner_id": session_id},
+                    files={"file": ("clip.exe", b"nope", "application/octet-stream")})
+    assert r.status_code == 400
+
+
+def test_clip_requires_exactly_one_of_file_or_url(client):
+    session_id = _make_session(client)
+    assert client.post("/api/clips",
+                       data={"owner_type": "session", "owner_id": session_id}).status_code == 400
+    assert client.post("/api/clips", data={
+        "owner_type": "session", "owner_id": session_id, "url": "https://x.test/a",
+    }, files={"file": ("clip.mp4", b"x", "video/mp4")}).status_code == 400
+
+
+def test_clip_rejects_unknown_owner(client):
+    assert client.post("/api/clips", data={
+        "owner_type": "session", "owner_id": 999, "url": "https://x.test/a",
+    }).status_code == 404
+    assert client.post("/api/clips", data={
+        "owner_type": "spaceship", "owner_id": 1, "url": "https://x.test/a",
+    }).status_code == 400
+
+
+def test_deleting_session_cleans_up_its_clips(client):
+    session_id = _make_session(client)
+    r = client.post("/api/clips",
+                    data={"owner_type": "session", "owner_id": session_id, "label": "x"},
+                    files={"file": ("clip.mp4", b"bytes", "video/mp4")})
+    play_url = r.json()["play_url"]
+    assert client.delete(f"/api/sessions/{session_id}").status_code == 200
+    assert client.get(play_url).status_code == 404
+
+
+def test_deleting_block_cleans_up_its_games_clips(client):
+    entry_id, block_id = _make_block_game_entry(client)
+    r = client.post("/api/clips",
+                    data={"owner_type": "block_game", "owner_id": entry_id, "label": "x"},
+                    files={"file": ("clip.mp4", b"bytes", "video/mp4")})
+    play_url = r.json()["play_url"]
+    assert client.delete(f"/api/blocks/{block_id}").status_code == 200
+    assert client.get(play_url).status_code == 404

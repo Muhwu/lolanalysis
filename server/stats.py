@@ -242,15 +242,17 @@ def summary(conn, puuid, from_ms=None, to_ms=None, champion=None, queues=None,
             {**params, "min_games": min_games},
         )
     ]
-    recent = [
-        dict(r) for r in conn.execute(
+    recent = []
+    for r in conn.execute(
             f"""SELECT match_id, game_creation_ms, game_duration_s, queue_id,
                        my_puuid, my_champion, opp_champion, rank_tier, win,
-                       kills, deaths, assists, cs
+                       kills, deaths, assists, cs, my_runes_json
                 FROM ({base}) ORDER BY game_creation_ms DESC LIMIT 20""",
-            params,
-        )
-    ]
+            params):
+        game = dict(r)
+        runes_json = game.pop("my_runes_json")
+        game["runes"] = json.loads(runes_json) if runes_json else None
+        recent.append(game)
     result = dict(totals) if totals["games"] else {"games": 0, "wins": 0, "winrate": None}
     result["by_champion"] = by_champion
     result["recent"] = recent

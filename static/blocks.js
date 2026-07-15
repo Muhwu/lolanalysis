@@ -1,7 +1,8 @@
 "use strict";
 /* Block Learnings view: champion pool + auto-advancing 3-game blocks.
    Uses globals from app.js: state, $, getJSON, escapeHtml, champIcon,
-   displayName, fmtDate, fmtDuration, renderNotes, unionFilterOptions. */
+   displayName, fmtDate, fmtDuration, renderNotes, unionFilterOptions,
+   clipsSection, wireClipsSection. */
 
 const blockState = {
   wired: false, blocks: [], blockSize: 3, editingLearnings: null, editingNotes: null,
@@ -9,6 +10,7 @@ const blockState = {
   collapsed: new Set(JSON.parse(localStorage.getItem("cp-collapsed-blocks") || "[]")),
   expandedGameStats: new Set(),
   gameMetricsCache: new Map(),
+  gameClipsCache: new Map(),
   focusId: null, // block to scroll to + highlight after the next render
 };
 
@@ -241,18 +243,18 @@ async function loadBlocks() {
 
 function gameMetricsPanel(entryId) {
   const data = blockState.gameMetricsCache.get(entryId);
-  if (data === null) return `<div class="muted">No detailed metrics recorded for this game.</div>`;
-  if (!data) return `<div class="muted">Loading…</div>`;
-  const meta = data.meta;
-  const groups = [...new Set(meta.map((m) => m.group))];
-  return `<div class="metric-groups">` + groups.map((g) => {
-    const rows = meta.filter((m) => m.group === g).map((m) => `
-      <div class="metric-row">
-        <span class="metric-label">${m.label}</span>
-        <span class="metric-value">${fmtMetric(data.metrics[m.key], m)}</span>
-      </div>`).join("");
-    return `<div class="metric-group"><h4>${g}</h4>${rows}</div>`;
-  }).join("") + `</div>`;
+  const metrics = data === null
+    ? `<div class="muted">No detailed metrics recorded for this game.</div>`
+    : !data ? `<div class="muted">Loading…</div>`
+    : `<div class="metric-groups">` + [...new Set(data.meta.map((m) => m.group))].map((g) => {
+        const rows = data.meta.filter((m) => m.group === g).map((m) => `
+          <div class="metric-row">
+            <span class="metric-label">${m.label}</span>
+            <span class="metric-value">${fmtMetric(data.metrics[m.key], m)}</span>
+          </div>`).join("");
+        return `<div class="metric-group"><h4>${g}</h4>${rows}</div>`;
+      }).join("") + `</div>`;
+  return `${metrics}${clipsSection("block_game", entryId, blockState.gameClipsCache.get(entryId))}`;
 }
 
 async function toggleGameStats(entryId, matchId, puuid) {
@@ -264,6 +266,10 @@ async function toggleGameStats(entryId, matchId, puuid) {
       const response = await fetch(
         `/api/stats/games/metrics?match_id=${encodeURIComponent(matchId)}&puuid=${encodeURIComponent(puuid)}`);
       blockState.gameMetricsCache.set(entryId, response.ok ? await response.json() : null);
+    }
+    if (!blockState.gameClipsCache.has(entryId)) {
+      blockState.gameClipsCache.set(entryId,
+        await getJSON(`/api/clips?owner_type=block_game&owner_id=${entryId}`));
     }
   }
   renderBlocks();
@@ -521,6 +527,12 @@ function renderBlocks() {
       await fetch(`/api/blocks/${btn.dataset.id}`, { method: "DELETE" });
       loadBlocks();
     }));
+  wireClipsSection(target, async (ownerType, ownerId) => {
+    blockState.gameClipsCache.delete(+ownerId);
+    blockState.gameClipsCache.set(+ownerId,
+      await getJSON(`/api/clips?owner_type=block_game&owner_id=${ownerId}`));
+    renderBlocks();
+  });
 }
 
 // ---------- picker ----------

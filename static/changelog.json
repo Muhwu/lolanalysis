@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "version": "1.18.0",
+      "date": "2026-07-15",
+      "items": [
+        "Overview tab's Recent games table now shows the runes actually played per game",
+        "Attach short clips (upload a local video, or paste a YouTube/Twitch link) to a specific part of a coaching session or a specific game in a block — each clip gets its own label"
+      ]
+    },
+    {
       "version": "1.17.0",
       "date": "2026-07-15",
       "items": [
