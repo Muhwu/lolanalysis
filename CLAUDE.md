@@ -308,6 +308,18 @@ app's lazy-load convention.
   (newest first; main functionality only, not tiny tweaks). It drives the 📋
   "What's new" panel; entries newer than the latest GitHub release tag show a
   "not yet released" badge.
+- **Every `VERSION` bump gets a matching `vX.Y.Z` git tag, pushed right
+  after the commit** (`git tag vX.Y.Z && git push origin vX.Y.Z`) — this is
+  what actually publishes the build: `build.yml`'s `push: tags: ["v*"]`
+  trigger runs the full build and its "Attach ... to release" steps only
+  fire `if: startsWith(github.ref, 'refs/tags/')`, so a commit without a
+  tag never reaches GitHub Releases (a `workflow_dispatch` run doesn't tag
+  or release either — it's for manual ad-hoc testing builds only, artifacts
+  downloaded straight from the run). Tags must be pushed from a real user
+  credential (this Bash tool's `git push`, not a GITHUB_TOKEN-authored push
+  from inside a workflow) — Actions suppresses further workflow triggers
+  from its own token to prevent trigger loops, so a tag created *by* a
+  workflow run would silently never kick off this one.
 
 - **Schema changes must be incremental and non-destructive.** Users upgrade
   the packaged app against a live database: new tables via
