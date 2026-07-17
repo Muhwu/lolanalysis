@@ -24,7 +24,10 @@ from . import rune_data
 RUNE_ICON_URL = "https://ddragon.leagueoflegends.com/cdn/img/{}"
 SHARD_ICON_URL = ("https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data"
                    "/global/default/v1/perk-images/statmods/{}")
-ICON_PT = 16  # rune/shard icon size in the PDF, in points
+DDRAGON_VERSIONS_URL = "https://ddragon.leagueoflegends.com/api/versions.json"
+ITEM_DATA_URL = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/item.json"
+ITEM_ICON_URL = "https://ddragon.leagueoflegends.com/cdn/{version}/img/item/{icon}"
+ICON_PT = 16  # rune/shard/item icon size in the PDF, in points
 
 
 def _styles():
@@ -100,11 +103,14 @@ def _markdown_flowables(text, styles):
 
 
 class _IconFetcher:
-    """Fetches + caches rune/shard icon bytes for one export call (a matchup
-    list commonly reuses the same keystone/shards across several pages)."""
+    """Fetches + caches rune/shard/item icon bytes for one export call (a
+    matchup list commonly reuses the same keystone/shards across several
+    pages, and item names repeat across core/situational sections)."""
 
     def __init__(self):
         self._cache = {}
+        self._ddragon_version = None  # None = not yet fetched, False = fetch failed
+        self._item_icon_by_name = None  # lazy: item name -> icon filename
 
     def _get(self, url):
         if url not in self._cache:
@@ -122,6 +128,37 @@ class _IconFetcher:
     def shard(self, icon_path):
         return self._get(SHARD_ICON_URL.format(icon_path)) if icon_path else None
 
+    def _ddragon_version_str(self):
+        if self._ddragon_version is None:
+            try:
+                resp = httpx.get(DDRAGON_VERSIONS_URL, timeout=5.0)
+                resp.raise_for_status()
+                self._ddragon_version = resp.json()[0]
+            except (httpx.HTTPError, ValueError, IndexError, KeyError):
+                self._ddragon_version = False
+        return self._ddragon_version or None
+
+    def _item_icon_filename(self, name):
+        if self._item_icon_by_name is None:
+            self._item_icon_by_name = {}
+            version = self._ddragon_version_str()
+            if version:
+                try:
+                    resp = httpx.get(ITEM_DATA_URL.format(version=version), timeout=8.0)
+                    resp.raise_for_status()
+                    items = resp.json().get("data") or {}
+                    self._item_icon_by_name = {
+                        v["name"]: v["image"]["full"] for v in items.values()
+                        if v.get("name") and v.get("image", {}).get("full")}
+                except (httpx.HTTPError, ValueError, KeyError):
+                    pass
+        return self._item_icon_by_name.get(name)
+
+    def item(self, name):
+        version = self._ddragon_version_str()
+        icon = self._item_icon_filename(name)
+        return self._get(ITEM_ICON_URL.format(version=version, icon=icon)) if version and icon else None
+
 
 def _icon_image(data):
     if not data:
@@ -130,6 +167,20 @@ def _icon_image(data):
         return Image(io.BytesIO(data), width=ICON_PT, height=ICON_PT)
     except Exception:
         return None
+
+
+def _icon_row_table(imgs):
+    if not imgs:
+        return None
+    table = Table([imgs], hAlign="LEFT")
+    table.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    return table
 
 
 def _rune_page_flowables(page, icons, styles):
@@ -150,15 +201,8 @@ def _rune_page_flowables(page, icons, styles):
         add(icons.shard(rune_data.SHARD_ICON.get(name)))
 
     flowables = []
-    if imgs:
-        table = Table([imgs], hAlign="LEFT")
-        table.setStyle(TableStyle([
-            ("LEFTPADDING", (0, 0), (-1, -1), 2),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-            ("TOPPADDING", (0, 0), (-1, -1), 0),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ]))
+    table = _icon_row_table(imgs)
+    if table:
         flowables.append(table)
 
     primary = ", ".join(filter(None, [page.get("keystone"), *(page.get("primary_runes") or [])]))
@@ -171,12 +215,44 @@ def _rune_page_flowables(page, icons, styles):
     return flowables
 
 
-def build_champion_guide_pdf(champion, general_notes, guide):
+def _item_row_flowables(items, icons, styles, heading):
+    if not items:
+        return []
+    flowables = [Paragraph(_inline_markup(heading), styles["H3"])]
+    imgs = [img for img in (_icon_image(icons.item(name)) for name in items) if img]
+    table = _icon_row_table(imgs)
+    if table:
+        flowables.append(table)
+    flowables.append(Paragraph(_inline_markup(", ".join(items)), styles["Caption"]))
+    return flowables
+
+
+def _item_build_flowables(item_build, icons, styles):
+    core = (item_build or {}).get("core") or []
+    situational = (item_build or {}).get("situational") or []
+    if not core and not situational:
+        return []
+    flowables = [Paragraph("Item build", styles["H1"])]
+    flowables.extend(_item_row_flowables(core, icons, styles, "Core build"))
+    for section in situational:
+        flowables.extend(_item_row_flowables(
+            section.get("items") or [], icons, styles, section.get("label") or "Situational"))
+    flowables.append(Spacer(1, 6))
+    return flowables
+
+
+def build_champion_guide_pdf(champion, general_notes, item_build, guide):
     """champion: display name string. general_notes: Markdown str.
-    guide: {opp_champion: {notes, runes: [page, ...], patch_version}} as
-    returned by db.get_matchup_notes. Matchups are ordered alphabetically —
-    the "most-played first" ordering the UI uses depends on a separate
-    stats query this module deliberately doesn't need."""
+    item_build: {core: [item name, ...], situational: [{label, items}, ...]}
+    as returned by db.get_item_build. guide: {opp_champion: {notes,
+    runes: [page, ...], patch_version}} as returned by db.get_matchup_notes.
+    Matchups are ordered alphabetically — the "most-played first" ordering
+    the UI uses depends on a separate stats query this module deliberately
+    doesn't need. Item icons need the champion's build's item *names*
+    resolved against the current patch's item data (fetched live, alongside
+    the current ddragon version — both cached per export call in
+    _IconFetcher) since, unlike rune icons, item icon paths are
+    version-scoped."""
     styles = _styles()
     icons = _IconFetcher()
     buf = io.BytesIO()
@@ -189,6 +265,8 @@ def build_champion_guide_pdf(champion, general_notes, guide):
         story.append(Paragraph("General notes", styles["H1"]))
         story.extend(_markdown_flowables(general_notes, styles))
         story.append(Spacer(1, 6))
+
+    story.extend(_item_build_flowables(item_build, icons, styles))
 
     for opp_champion in sorted(guide):
         entry = guide[opp_champion]

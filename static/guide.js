@@ -30,10 +30,20 @@ const guideState = {
   pendingFocus: null,  // opp_champion to focus once the next load completes (deep link)
   generalNotes: "",     // myChampion's general (non-matchup) Markdown notes
   editingGeneral: false,
+  itemBuild: { core: [], situational: [] }, // myChampion's item build
+  editingItemBuild: false,
+  itemBuildDraft: null,  // working copy while editing: { core: [...], situational: [{label, items}] }
+  itemPickerTarget: null, // { kind: "core" } or { kind: "situational", index } — which list an open picker adds to
+  itemPickerQuery: "",
 };
+
+const MAX_CORE_ITEMS = 6;
+const MAX_SITUATIONAL_SECTIONS = 12;
+const MAX_ITEMS_PER_SECTION = 5;
 
 const RUNE_TREES = [];
 const SHARD_ROWS = [];
+const ITEMS = []; // [{name, icon}] — purchasable Summoner's Rift items, current patch
 
 async function loadRuneTrees() {
   if (RUNE_TREES.length) return;
@@ -41,6 +51,32 @@ async function loadRuneTrees() {
   RUNE_TREES.push(...data.trees);
   SHARD_ROWS.push(...data.shardRows);
 }
+
+async function loadItemData() {
+  if (ITEMS.length || !state.ddragonVersion) return;
+  const cacheKey = `item-data-${state.ddragonVersion}`;
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      ITEMS.push(...JSON.parse(cached));
+      return;
+    }
+    const data = await getJSON(
+      `https://ddragon.leagueoflegends.com/cdn/${state.ddragonVersion}/data/en_US/item.json`);
+    const items = Object.values(data.data || {})
+      .filter((item) => item.gold && item.gold.purchasable && item.maps && item.maps["11"])
+      .map((item) => ({ name: item.name, icon: item.image.full }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    localStorage.setItem(cacheKey, JSON.stringify(items));
+    ITEMS.push(...items);
+  } catch {
+    // offline / fetch failed — the picker just has no options; existing
+    // builds still display (icon lookup by name silently finds nothing)
+  }
+}
+
+function itemByName(name) { return ITEMS.find((i) => i.name === name); }
+function itemIconUrl(icon) { return `https://ddragon.leagueoflegends.com/cdn/${state.ddragonVersion}/img/item/${icon}`; }
 
 function runeIconUrl(icon) { return `https://ddragon.leagueoflegends.com/cdn/img/${icon}`; }
 function shardIconUrl(icon) {
@@ -91,6 +127,7 @@ async function initGuide() {
       guideState.myChampion = e.target.value;
       guideState.editing = null;
       guideState.editingGeneral = false;
+      guideState.editingItemBuild = false;
       loadGuide();
     });
     $("#guide-add-form").addEventListener("submit", (e) => {
@@ -100,7 +137,7 @@ async function initGuide() {
     wireExportImport();
   }
   await loadChampionRoster(); // loadGuideChampionOptions needs the full roster
-  await Promise.all([loadGuideChampionOptions(), loadRuneTrees()]);
+  await Promise.all([loadGuideChampionOptions(), loadRuneTrees(), loadItemData()]);
   await loadGuide();
   if (guideState.pendingFocus) {
     const champ = guideState.pendingFocus;
@@ -119,7 +156,7 @@ async function loadGuideChampionOptions() {
   const all = [...roster.nameById.keys()].sort(
     (a, b) => champDisplay(a).localeCompare(champDisplay(b)));
   if (!guideState.myChampion) {
-    if (state.defaultChampion) {
+    if (state.defaultChampion && roster.nameById.has(state.defaultChampion)) {
       guideState.myChampion = state.defaultChampion;
     } else {
       const played = await getJSON(`/api/filters?${accountParams()}`);
@@ -136,18 +173,22 @@ async function loadGuide() {
   guideState.games = new Map();
   guideState.expanded = new Set();
   guideState.openRunePages = new Set();
+  guideState.editingItemBuild = false;
   if (!guideState.myChampion) {
     guideState.matchups = [];
     guideState.guide = {};
     guideState.generalNotes = "";
+    guideState.itemBuild = { core: [], situational: [] };
     renderGuide();
     renderGuideGeneral();
+    renderGuideItemBuild();
     return;
   }
-  const [matchups, guide, general] = await Promise.all([
+  const [matchups, guide, general, itemBuild] = await Promise.all([
     getJSON(`/api/stats/matchups?${accountParams()}&champion=${encodeURIComponent(guideState.myChampion)}&min_games=1`),
     getJSON(`/api/matchups/notes?my_champion=${encodeURIComponent(guideState.myChampion)}`),
     getJSON(`/api/champions/notes/${encodeURIComponent(guideState.myChampion)}`),
+    getJSON(`/api/champions/item-build/${encodeURIComponent(guideState.myChampion)}`),
   ]);
   // a guide can exist for an opponent this champion has never faced (added
   // by hand, imported, or migrated from pre-champ-guide notes) — give it a
@@ -160,8 +201,10 @@ async function loadGuide() {
   guideState.matchups = matchups;
   guideState.guide = guide;
   guideState.generalNotes = general.notes;
+  guideState.itemBuild = itemBuild;
   renderGuide();
   renderGuideGeneral();
+  renderGuideItemBuild();
   updateGuideAddOptions();
 }
 
@@ -435,7 +478,7 @@ function runePageCard(page, i, opp) {
         aria-expanded="${open}" title="${open ? "Hide" : "Show"} rune details">${open ? "▾" : "▸"}</button>
     </div>
     <div class="rune-page-display">${
-      runePageIcons(page, { keystoneSize: 34, minorSize: 20, treeSize: 24, shardSize: 16 })}
+      runePageIcons(page, { keystoneSize: 17, minorSize: 10, treeSize: 12, shardSize: 8 })}
     </div>
     ${open ? runePageDetail(page) : ""}
   </div>`;
@@ -792,6 +835,202 @@ function renderGuideGeneral() {
     }));
 }
 
+// ---------- item build (core + situational sections) ----------
+
+function itemChip(name, removable, dataAttrs) {
+  const item = itemByName(name);
+  const icon = item
+    ? `<img src="${itemIconUrl(item.icon)}" alt="${escapeHtml(name)}" title="${escapeHtml(name)}" width="24" height="24">`
+    : "";
+  return `<span class="item-chip" ${dataAttrs || ""}>${icon}<span class="item-chip-name">${escapeHtml(name)}</span>${
+    removable ? `<button class="preset chip-x item-chip-remove" type="button" title="Remove">×</button>` : ""}</span>`;
+}
+
+function itemBuildSectionView(label, items) {
+  if (!items.length) return "";
+  return `<div class="item-build-section">
+    <h5>${escapeHtml(label)}</h5>
+    <div class="item-build-icons">${items.map((n) => itemChip(n, false)).join("")}</div>
+  </div>`;
+}
+
+function itemPickerHtml() {
+  const q = guideState.itemPickerQuery.toLowerCase();
+  const results = (q ? ITEMS.filter((i) => i.name.toLowerCase().includes(q)) : ITEMS).slice(0, 30);
+  const rows = results.length
+    ? results.map((i) => `<button class="preset item-picker-result" type="button" data-name="${escapeHtml(i.name)}">
+        <img src="${itemIconUrl(i.icon)}" alt="" width="20" height="20">${escapeHtml(i.name)}</button>`).join("")
+    : `<p class="muted">${ITEMS.length ? "No matching items." : "Item list unavailable (offline?)."}</p>`;
+  return `<div class="item-picker">
+    <input type="text" id="item-picker-search" placeholder="Search items…" value="${escapeHtml(guideState.itemPickerQuery)}">
+    <div class="item-picker-results">${rows}</div>
+    <button class="preset item-picker-close" type="button">Cancel</button>
+  </div>`;
+}
+
+function itemBuildBlock() {
+  const champ = guideState.myChampion;
+  const { core, situational } = guideState.itemBuild;
+  if (guideState.editingItemBuild) {
+    const draft = guideState.itemBuildDraft;
+    const coreChips = draft.core.map((name, i) =>
+      itemChip(name, true, `data-target="core" data-index="${i}"`)).join("");
+    const coreAdd = draft.core.length < MAX_CORE_ITEMS
+      ? `<button class="preset item-add-btn" type="button" data-target="core">+ Add item</button>` : "";
+    const situationalHtml = draft.situational.map((section, si) => {
+      const chips = section.items.map((name, ii) =>
+        itemChip(name, true, `data-target="situational" data-section="${si}" data-index="${ii}"`)).join("");
+      const addBtn = section.items.length < MAX_ITEMS_PER_SECTION
+        ? `<button class="preset item-add-btn" type="button" data-target="situational" data-section="${si}">+ Add item</button>` : "";
+      return `<div class="item-build-section-editor" data-section="${si}">
+        <div class="item-section-head">
+          <input type="text" class="item-section-label" data-section="${si}"
+            value="${escapeHtml(section.label)}" placeholder="e.g. vs heavy AP">
+          <button class="preset chip-x item-section-remove" type="button" data-section="${si}" title="Remove section">×</button>
+        </div>
+        <div class="item-build-icons">${chips}${addBtn}</div>
+      </div>`;
+    }).join("");
+    const addSectionBtn = draft.situational.length < MAX_SITUATIONAL_SECTIONS
+      ? `<button class="preset item-section-add" type="button">+ Add situational section</button>` : "";
+    const picker = guideState.itemPickerTarget ? itemPickerHtml() : "";
+    return `<div class="mu-notes">
+      <div class="mu-notes-head"><h4>${displayName(champ)} item build</h4></div>
+      <div class="item-build-editor">
+        <div class="item-build-section-editor">
+          <h5>Core build <span class="muted">(first 2-3 items, in order)</span></h5>
+          <div class="item-build-icons">${coreChips}${coreAdd}</div>
+        </div>
+        <h5>Situational <span class="muted">(1-5 items each)</span></h5>
+        ${situationalHtml}
+        ${addSectionBtn}
+        ${picker}
+        <div class="session-actions">
+          <button class="preset item-build-save" type="button">Save</button>
+          <button class="preset item-build-cancel" type="button">Cancel</button>
+          <span class="muted item-build-status"></span>
+        </div>
+      </div>
+    </div>`;
+  }
+  const sections = [
+    itemBuildSectionView("Core build", core),
+    ...situational.map((s) => itemBuildSectionView(s.label, s.items)),
+  ].join("");
+  const body = sections
+    ? `<div class="item-build-display">${sections}</div>`
+    : `<p class="muted">No item build for ${displayName(champ)} yet.</p>`;
+  return `<div class="mu-notes">
+    <div class="mu-notes-head"><h4>${displayName(champ)} item build</h4>
+      <button class="preset icon-btn item-build-edit" title="Edit item build" aria-label="Edit item build">✎</button>
+    </div>${body}</div>`;
+}
+
+function renderGuideItemBuild() {
+  const target = $("#guide-item-build");
+  target.innerHTML = guideState.myChampion ? itemBuildBlock() : "";
+  target.querySelectorAll(".item-build-edit").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      guideState.editingItemBuild = true;
+      guideState.itemBuildDraft = {
+        core: [...guideState.itemBuild.core],
+        situational: guideState.itemBuild.situational.map((s) => ({ label: s.label, items: [...s.items] })),
+      };
+      guideState.itemPickerTarget = null;
+      renderGuideItemBuild();
+    }));
+  target.querySelectorAll(".item-build-cancel").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      guideState.editingItemBuild = false;
+      guideState.itemBuildDraft = null;
+      guideState.itemPickerTarget = null;
+      renderGuideItemBuild();
+    }));
+  target.querySelectorAll(".item-chip-remove").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const chip = btn.closest("[data-target]");
+      if (chip.dataset.target === "core") {
+        guideState.itemBuildDraft.core.splice(+chip.dataset.index, 1);
+      } else {
+        guideState.itemBuildDraft.situational[+chip.dataset.section].items.splice(+chip.dataset.index, 1);
+      }
+      renderGuideItemBuild();
+    }));
+  target.querySelectorAll(".item-add-btn").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      guideState.itemPickerTarget = btn.dataset.target === "core"
+        ? { kind: "core" } : { kind: "situational", index: +btn.dataset.section };
+      guideState.itemPickerQuery = "";
+      renderGuideItemBuild();
+      const search = $("#item-picker-search");
+      if (search) search.focus();
+    }));
+  target.querySelectorAll(".item-picker-result").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const name = btn.dataset.name;
+      const t = guideState.itemPickerTarget;
+      if (!t) return;
+      if (t.kind === "core") {
+        if (guideState.itemBuildDraft.core.length < MAX_CORE_ITEMS) guideState.itemBuildDraft.core.push(name);
+      } else {
+        const section = guideState.itemBuildDraft.situational[t.index];
+        if (section.items.length < MAX_ITEMS_PER_SECTION) section.items.push(name);
+      }
+      guideState.itemPickerTarget = null;
+      renderGuideItemBuild();
+    }));
+  const search = target.querySelector("#item-picker-search");
+  if (search) {
+    search.focus();
+    search.selectionStart = search.selectionEnd = search.value.length;
+    search.addEventListener("input", (e) => {
+      guideState.itemPickerQuery = e.target.value;
+      renderGuideItemBuild();
+    });
+  }
+  target.querySelectorAll(".item-picker-close").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      guideState.itemPickerTarget = null;
+      renderGuideItemBuild();
+    }));
+  target.querySelectorAll(".item-section-add").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      if (guideState.itemBuildDraft.situational.length >= MAX_SITUATIONAL_SECTIONS) return;
+      guideState.itemBuildDraft.situational.push({ label: "", items: [] });
+      renderGuideItemBuild();
+    }));
+  target.querySelectorAll(".item-section-remove").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      guideState.itemBuildDraft.situational.splice(+btn.dataset.section, 1);
+      renderGuideItemBuild();
+    }));
+  target.querySelectorAll(".item-section-label").forEach((input) =>
+    input.addEventListener("input", (e) => {
+      guideState.itemBuildDraft.situational[+e.target.dataset.section].label = e.target.value;
+    }));
+  target.querySelectorAll(".item-build-save").forEach((btn) =>
+    btn.addEventListener("click", async () => {
+      const draft = guideState.itemBuildDraft;
+      const situational = draft.situational
+        .map((s) => ({ label: s.label.trim(), items: s.items }))
+        .filter((s) => s.label || s.items.length);
+      const response = await fetch(`/api/champions/item-build/${encodeURIComponent(guideState.myChampion)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ core: draft.core, situational }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        target.querySelector(".item-build-status").textContent = body.detail || `error ${response.status}`;
+        return;
+      }
+      guideState.itemBuild = { core: draft.core, situational };
+      guideState.editingItemBuild = false;
+      guideState.itemBuildDraft = null;
+      renderGuideItemBuild();
+    }));
+}
+
 // ---------- export / import ----------
 
 function downloadBlob(blob, filename) {
@@ -873,8 +1112,10 @@ function wireExportImport() {
     const overwriteNote = info.will_overwrite.length
       ? ` ${info.will_overwrite.length} of these will overwrite existing guides: ${info.will_overwrite.map(displayName).join(", ")}.`
       : "";
+    const extras = [info.has_general_notes && "general notes", info.has_item_build && "item build"]
+      .filter(Boolean).join(" and ");
     const confirmMsg = `Import ${info.opponents.length} matchup guide(s) for ` +
-      `${displayName(info.my_champion)}${info.has_general_notes ? " plus its general notes" : ""}?${overwriteNote}`;
+      `${displayName(info.my_champion)}${extras ? ` plus its ${extras}` : ""}?${overwriteNote}`;
     if (!confirm(confirmMsg)) { status.textContent = "cancelled"; return; }
     const result = await fetch("/api/matchups/notes/import", {
       method: "POST",

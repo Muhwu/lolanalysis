@@ -699,8 +699,35 @@ def test_champion_general_notes_endpoints(client):
     assert client.put("/api/champions/notes/Gwen", json={}).status_code == 400
 
 
+def test_champion_item_build_endpoints(client):
+    assert client.get("/api/champions/item-build/Gwen").json() == {"core": [], "situational": []}
+    body = {"core": ["Riftmaker", "Nashor's Tooth"],
+            "situational": [{"label": "vs heavy AP", "items": ["Zhonya's Hourglass"]}]}
+    assert client.put("/api/champions/item-build/Gwen", json=body).status_code == 200
+    assert client.get("/api/champions/item-build/Gwen").json() == body
+    assert client.put("/api/champions/item-build/Gwen", json={"core": [], "situational": []}).status_code == 200
+    assert client.get("/api/champions/item-build/Gwen").json() == {"core": [], "situational": []}
+
+
+def test_champion_item_build_validation(client):
+    assert client.put("/api/champions/item-build/NotAChamp", json={"core": []}).status_code == 400
+    assert client.put("/api/champions/item-build/Gwen",
+                       json={"core": ["A"] * 7}).status_code == 400  # over MAX_CORE_ITEMS
+    assert client.put("/api/champions/item-build/Gwen",
+                       json={"core": [123]}).status_code == 400  # not strings
+    assert client.put("/api/champions/item-build/Gwen",
+                       json={"situational": [{"label": "", "items": ["A"]}]}).status_code == 400  # no label
+    assert client.put("/api/champions/item-build/Gwen",
+                       json={"situational": [{"label": "x", "items": ["A"] * 6}]}).status_code == 400  # over 5
+    assert client.put("/api/champions/item-build/Gwen",
+                       json={"situational": [{"label": "x"}] * 13}).status_code == 400  # over 12 sections
+
+
 def _seed_champ_guide(client):
     client.put("/api/champions/notes/Gwen", json={"notes": "general Gwen tips"})
+    client.put("/api/champions/item-build/Gwen", json={
+        "core": ["Riftmaker", "Nashor's Tooth"],
+        "situational": [{"label": "vs heavy AP", "items": ["Zhonya's Hourglass"]}]})
     client.put("/api/matchups/notes/Gwen/Darius", json={
         "notes": "respect level 2", "runes": [CONQ_PAGE], "patch_version": "14.14"})
     client.put("/api/matchups/notes/Gwen/Renekton", json={"notes": "easy lane"})
@@ -717,6 +744,7 @@ def test_champ_guide_export_plain(client):
     assert data["my_champion"] == "Gwen"
     assert data["encrypted"] is False
     assert data["general_notes"] == "general Gwen tips"
+    assert data["item_build"]["core"] == ["Riftmaker", "Nashor's Tooth"]
     assert data["guide"]["Darius"]["notes"] == "respect level 2"
     assert data["guide"]["Renekton"]["notes"] == "easy lane"
 
@@ -764,10 +792,12 @@ def test_champ_guide_import_plain_round_trip(client):
     assert sorted(preview["opponents"]) == ["Darius", "Renekton"]
     assert preview["will_overwrite"] == []
     assert preview["has_general_notes"] is True
+    assert preview["has_item_build"] is True
     r = client.post("/api/matchups/notes/import", json={"data": export})
     assert r.status_code == 200
     assert r.json() == {"imported": 2}
     assert client.get("/api/champions/notes/Camille").json()["notes"] == "general Gwen tips"
+    assert client.get("/api/champions/item-build/Camille").json()["core"] == ["Riftmaker", "Nashor's Tooth"]
     guide = client.get("/api/matchups/notes?my_champion=Camille").json()
     assert guide["Darius"]["runes"] == [CONQ_PAGE]
     assert guide["Renekton"]["notes"] == "easy lane"
@@ -995,6 +1025,16 @@ def test_accent_color_setting_endpoint(client):
     assert _put_settings(client, accent_color=123).status_code == 400
 
 
+def test_default_champion_setting_endpoint(client):
+    assert client.get("/api/settings").json()["default_champion"] is None
+    assert _put_settings(client, default_champion="Gwen").status_code == 200
+    assert client.get("/api/settings").json()["default_champion"] == "Gwen"
+    assert _put_settings(client, default_champion=None).status_code == 200
+    assert client.get("/api/settings").json()["default_champion"] is None
+    assert _put_settings(client, default_champion="NotAChamp").status_code == 400
+    assert _put_settings(client, default_champion=123).status_code == 400
+
+
 def test_background_image_upload_roundtrip(client):
     assert client.get("/api/settings").json()["background_image"] is False
     assert client.get("/api/settings/background/file").status_code == 404
@@ -1184,3 +1224,73 @@ def test_deleting_block_cleans_up_its_games_clips(client):
     play_url = r.json()["play_url"]
     assert client.delete(f"/api/blocks/{block_id}").status_code == 200
     assert client.get(play_url).status_code == 404
+
+
+def test_research_entry_crud(client):
+    assert client.get("/api/research").json() == []
+    r = client.post("/api/research", json={
+        "player_name": "Faker", "champion": "Azir", "opp_champion": "Zed",
+        "title": "Level 1 pathing", "notes": "interesting recall timing"})
+    assert r.status_code == 200
+    entry = r.json()
+    assert entry["player_name"] == "Faker"
+    assert entry["screenshots"] == []
+    entry_id = entry["id"]
+
+    listed = client.get("/api/research").json()
+    assert len(listed) == 1 and listed[0]["id"] == entry_id
+
+    r = client.patch(f"/api/research/{entry_id}", json={"notes": "updated notes"})
+    assert r.status_code == 200
+    assert r.json()["notes"] == "updated notes"
+    assert r.json()["player_name"] == "Faker"  # unspecified fields untouched
+
+    assert client.post("/api/research", json={"champion": "NotAChamp",
+                                               "player_name": "x"}).status_code == 400
+    assert client.post("/api/research", json={"player_name": ""}).status_code == 400
+
+    assert client.delete(f"/api/research/{entry_id}").status_code == 200
+    assert client.get("/api/research").json() == []
+    assert client.delete(f"/api/research/{entry_id}").status_code == 404
+    assert client.get(f"/api/research/{entry_id}").status_code == 404
+
+
+def test_research_entry_screenshots(client):
+    entry_id = client.post("/api/research", json={"player_name": "Faker"}).json()["id"]
+    r = client.post(f"/api/research/{entry_id}/screenshots", data={"caption": "level 1 setup"},
+                    files={"file": ("shot.png", b"fake png bytes", "image/png")})
+    assert r.status_code == 200
+    screenshots = r.json()
+    assert len(screenshots) == 1
+    shot = screenshots[0]
+    assert shot["caption"] == "level 1 setup"
+    file_resp = client.get(shot["file_url"])
+    assert file_resp.status_code == 200
+    assert file_resp.content == b"fake png bytes"
+
+    big = b"x" * (15 * 1024 * 1024 + 1)
+    assert client.post(f"/api/research/{entry_id}/screenshots",
+                       files={"file": ("shot.png", big, "image/png")}).status_code == 413
+    assert client.post(f"/api/research/{entry_id}/screenshots",
+                       files={"file": ("shot.exe", b"x", "application/octet-stream")}
+                       ).status_code == 400
+    assert client.post("/api/research/999/screenshots",
+                       files={"file": ("shot.png", b"x", "image/png")}).status_code == 404
+
+    assert client.delete(f"/api/research/screenshots/{shot['id']}").status_code == 200
+    assert client.get(shot["file_url"]).status_code == 404
+
+
+def test_research_entry_rejects_clip_attachment(client):
+    entry_id = client.post("/api/research", json={"player_name": "Faker"}).json()["id"]
+    r = client.post("/api/clips", data={
+        "owner_type": "research_entry", "owner_id": entry_id, "url": "https://youtu.be/abc"})
+    assert r.status_code == 400  # research entries deliberately don't support clips/VODs
+
+
+def test_deleting_research_entry_cleans_up_screenshots(client):
+    entry_id = client.post("/api/research", json={"player_name": "Faker"}).json()["id"]
+    shot = client.post(f"/api/research/{entry_id}/screenshots",
+                       files={"file": ("shot.png", b"bytes", "image/png")}).json()[0]
+    assert client.delete(f"/api/research/{entry_id}").status_code == 200
+    assert client.get(shot["file_url"]).status_code == 404

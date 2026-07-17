@@ -18,6 +18,7 @@
     <button id="nav-trends" role="tab">Trends</button>
     <button id="nav-blocks" role="tab">Blocks</button>
     <button id="nav-guide" role="tab">Champ guide</button>
+    <button id="nav-research" role="tab">Research</button>
   </div>
   <details id="account-select" class="col-picker hidden" aria-label="Accounts">
     <summary id="account-select-btn" class="preset">All accounts ▾</summary>
@@ -158,6 +159,7 @@
         <label><input type="checkbox" class="view-toggle-cb" value="trends" checked> Trends</label>
         <label><input type="checkbox" class="view-toggle-cb" value="blocks" checked> Blocks</label>
         <label><input type="checkbox" class="view-toggle-cb" value="guide" checked> Champ guide</label>
+        <label><input type="checkbox" class="view-toggle-cb" value="research" checked> Research</label>
       </div>
       <p class="muted">Untick views you don't use to hide them from the top bar
         (data collection is unaffected).</p>
@@ -361,6 +363,10 @@
 </section>
 
 <section>
+  <div id="guide-item-build"></div>
+</section>
+
+<section>
   <h2>Champ guide</h2>
   <div id="guide-list"></div>
   <form id="guide-add-form" class="filter-row" style="margin-top:10px">
@@ -372,6 +378,37 @@
     </div>
     <button type="submit" class="preset">Add</button>
     <span id="guide-add-status" class="muted"></span>
+  </form>
+</section>
+</div>
+
+<div id="research-view" class="hidden">
+<section>
+  <h2>Research</h2>
+  <p class="muted">Study other players' games — notes, screenshots, and VOD timestamps.</p>
+  <div id="research-list"></div>
+</section>
+<section>
+  <h3>New research entry</h3>
+  <form id="research-add-form" class="filter-row">
+    <div class="filter-group">
+      <label class="filter-label" for="research-player">Player</label>
+      <input type="text" id="research-player" placeholder="e.g. Faker" style="width:14em">
+    </div>
+    <div class="filter-group">
+      <label class="filter-label" for="research-champion">Their champion</label>
+      <input type="text" id="research-champion" list="champ-list" placeholder="optional">
+    </div>
+    <div class="filter-group">
+      <label class="filter-label" for="research-opp-champion">Opponent</label>
+      <input type="text" id="research-opp-champion" list="champ-list" placeholder="optional">
+    </div>
+    <div class="filter-group" style="flex:1">
+      <label class="filter-label" for="research-title">Title</label>
+      <input type="text" id="research-title" placeholder="e.g. level 1 pathing" style="width:100%">
+    </div>
+    <button type="submit" class="preset">Add</button>
+    <span id="research-add-status" class="muted"></span>
   </form>
 </section>
 </div>
@@ -451,8 +488,12 @@
 </section>
 
 <section>
-  <h2>My champions</h2>
-  <div id="champion-table"></div>
+  <div class="section-head">
+    <button id="champion-table-toggle" class="preset seg-toggle" aria-expanded="false"
+      title="Expand/collapse My champions">▸</button>
+    <h2>My champions</h2>
+  </div>
+  <div id="champion-table" class="hidden"></div>
 </section>
 
 <section>
@@ -472,5 +513,6 @@
 <script src="trends.js"></script>
 <script src="blocks.js"></script>
 <script src="guide.js"></script>
+<script src="research.js"></script>
 </body>
 </html>

@@ -121,6 +121,11 @@ change, not a crawler change.
   via `color-mix(...)` too, so every accent-tinted background/border (active
   tabs, buttons, chip highlights) follows a custom color for free — watch
   for new one-off `rgba(42, 120, 214, ...)`-style literals bypassing this.
+  `default_champion` (optional, `_validate_champion`d if given) is
+  preselected as "My champion" on the Champ guide (`guide.js`'s
+  `loadGuideChampionOptions`, ahead of the "first played champion"
+  fallback) — set on `state.defaultChampion` from `/api/settings` at app
+  init and again after a settings save, so it applies without a reload.
   Session CRUD at `/api/sessions`;
   `/api/stats/progress` aggregates across ALL tracked puuids (no puuid param).
 - Sessions have `title` + Markdown `notes` (legacy `note` column auto-migrates
@@ -178,7 +183,12 @@ change, not a crawler change.
   champion-roster autocomplete from `blocks.js`; each matchup's "Recent
   games" column shows real games with the actual runes played, when
   recorded; Export/Import menus export/import one champion's whole guide as
-  JSON, optionally password-encrypted) in `guide.js`.
+  JSON, optionally password-encrypted) in `guide.js`; Research view (own nav
+  tab: a study journal for other players' games, unrelated to the tracked-
+  account crawler — freeform entries: player name, optional champion/
+  opponent, one Markdown notes field (covers general + VOD notes together),
+  and multiple screenshots — deliberately no timestamp log or video/clip
+  attachments here) in `research.js`.
 
 ## Schema (data/lol.sqlite)
 
@@ -239,13 +249,32 @@ patch. `default_champion` (settings key, validated champion or unset)
 pre-selects the Champ guide's "My champion" — reuse it for any future
 your-champion-scoped feature (`state.defaultChampion` client-side).
 `champion_notes(champion PK, notes, updated_at_ms)` — general (non-matchup)
-Markdown notes for a champion (build order, itemization…), shown above the
-matchup list on the Champ guide page. `GET`/`PUT /api/champions/notes/
-{champion}`.
+Markdown notes for a champion, shown above the matchup list on the Champ
+guide page. `GET`/`PUT /api/champions/notes/{champion}`.
+`champion_item_builds(champion PK, core, situational, updated_at_ms)` — a
+mobafire-style item build, separate from the freeform general notes:
+`core` is a JSON array of item names (an ordered "first N items" build,
+capped at `MAX_CORE_ITEMS`=6); `situational` is a JSON array of `{label,
+items}` (a labeled alternative, e.g. "vs heavy AP", capped at
+`MAX_ITEMS_PER_SECTION`=5 items, `MAX_SITUATIONAL_SECTIONS`=12 sections).
+Items are stored as plain name strings, not ids — the server does no item
+validation beyond shape/counts (`_validate_item_build` in app.py, shared by
+the PUT endpoint and champ-guide import). `GET`/`PUT
+/api/champions/item-build/{champion}`. Icons are resolved entirely
+client-side: `guide.js`'s `loadItemData()` fetches DDragon's current
+`item.json` once (like `loadDdragonVersion()`, cached in localStorage per
+version) filtered to Summoner's Rift-purchasable items, building a
+`name -> icon` map for the picker and for rendering existing builds — no
+static `items.json` asset, unlike champions/runes, since items change
+essentially every patch. UI in `guide.js` (`itemBuildBlock`/
+`renderGuideItemBuild`): an edit/view toggle like general notes, a
+searchable icon picker shared between the core list and every situational
+section (`itemPickerTarget` tracks which list is receiving the next pick).
 Champ guide export/import (`server/crypto.py`): `POST /api/matchups/notes/
-export` bundles one champion's `champion_notes` + all its `matchup_notes`
-rows into a downloadable JSON file; an optional `password` in the request
-body encrypts the payload (PBKDF2-HMAC-SHA256 key derivation + Fernet/
+export` bundles one champion's `champion_notes` + `champion_item_builds` +
+all its `matchup_notes` rows into a downloadable JSON file; an optional
+`password` in the request body encrypts the payload (PBKDF2-HMAC-SHA256
+key derivation + Fernet/
 AES-128 via the `cryptography` package — a real cipher, not obfuscation).
 `POST /api/matchups/notes/import/preview` decrypts (if needed) and reports
 which opponents would be added/overwritten without writing anything;
@@ -253,15 +282,20 @@ which opponents would be added/overwritten without writing anything;
 password on an encrypted file → 401. UI in `guide.js` (Export/Import menus
 on the Champ guide page); import always shows the preview's overwrite
 count in a `confirm()` before committing.
-`GET /api/matchups/notes/export.pdf?my_champion=` — a printable PDF of the
-same content (general notes + every matchup: patch, rune pages, Markdown
-notes), built by `server/pdf_export.py` (reportlab). Unlike the JSON
-export, this fetches rune/tree/shard icons live from ddragon/CommunityDragon
-at export time (same CDN URLs guide.js hotlinks; name→icon lookups added to
-`rune_data.py` as `TREE_ICON`/`RUNE_ICON`/`SHARD_ICON`) and embeds them —
-slower, needs network, no password option (nothing to protect in a
-print-and-read document). A fetch failure for one icon silently skips just
-that icon rather than failing the export (`_IconFetcher`, cached per call).
+`GET /api/matchups/notes/export.pdf?my_champion=` — a printable PDF
+mirroring the whole Champ guide page (general notes, item build, and every
+matchup: patch, rune pages, Markdown notes) except the "Recent games"
+column, which is deliberately left out — built by `server/pdf_export.py`
+(reportlab). Unlike the JSON export, this fetches icons live at export
+time and embeds them — slower, needs network, no password option (nothing
+to protect in a print-and-read document). Rune/tree/shard icons use the
+same version-independent CDN paths guide.js hotlinks (name→icon lookups
+added to `rune_data.py` as `TREE_ICON`/`RUNE_ICON`/`SHARD_ICON`); item
+icons are version-scoped, so `_IconFetcher` additionally fetches the
+current ddragon version + `item.json` once per export call (mirroring
+guide.js's `loadItemData()`, server-side) to resolve item names to icon
+files. A fetch failure for one icon (or the version/item-data lookups)
+silently skips just that icon rather than failing the export.
 Markdown notes go through a small purpose-built converter
 (`_markdown_flowables`/`_inline_markup`) — headings/paragraphs/bullets/
 **bold**/*italic*/`code` only, no tables/links/nested lists, since coaching
@@ -311,7 +345,30 @@ db.py never touches the filesystem, app.py does the unlink). Shared UI in
 `app.js` (`clipsSection`/`wireClipsSection`, used by both the Coaching
 progress session cards and `blocks.js`'s per-game stats panel) — clips
 only fetch when that session/game is expanded, matching the rest of the
-app's lazy-load convention.
+app's lazy-load convention. Research entries deliberately don't use this —
+no video/clip attachments there, screenshots only (see below).
+`research_entries(id PK, player_name, champion, opp_champion, title, notes,
+created_at_ms, updated_at_ms)` — a Research-tab study entry for someone
+else's game; `champion`/`opp_champion` are optional freeform text (loosely
+validated against the champion roster if given, like everywhere else, but
+blank is fine — a research entry might be about macro/positioning, not a
+specific matchup). `notes` is one Markdown field covering both general
+observations and VOD notes together — no separate timestamp log; if the
+user wants to note a moment in a VOD they just write it inline (e.g.
+"14:32 — bad rotation") as part of the notes.
+`research_screenshots(id PK, entry_id, caption, file_name, created_at_ms)`
+— multiple screenshots per entry (no caption collected via the UI, though
+the column stays optional for future use); files under
+`<db_dir>/research-screenshots/<uuid><ext>` (15 MB cap, same image
+extensions as the background-picture feature — `get_research_screenshots_dir()`
+in app.py). API: `GET/POST/PATCH/DELETE /api/research[/{id}]`,
+`POST /api/research/{id}/screenshots` + `GET .../file` + `DELETE
+/api/research/screenshots/{id}`. Deleting an entry cascades screenshots
+(`db.delete_research_entry`), unlinking their files in app.py first, same
+division of responsibility as sessions/blocks. UI in `research.js`:
+collapsed-by-default entry cards (list is lightweight — `GET /api/research`
+returns only the entry rows; screenshots are fetched together with the
+rest of the entry on first expand via `GET /api/research/{id}`).
 
 ## Development rules
 

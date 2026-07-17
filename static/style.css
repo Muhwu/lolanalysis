@@ -752,6 +752,54 @@ td.rank-cell { font-size: 12px; line-height: 1.5; }
 .legacy-notes-row { display: flex; align-items: center; gap: 8px; }
 .mu-block-notes { margin-top: 16px; max-width: 720px; }
 
+/* ---------- item build ---------- */
+.item-build-display, .item-build-editor { display: flex; flex-direction: column; gap: 12px; margin-top: 6px; }
+.item-build-section h5, .item-build-section-editor h5 {
+  margin: 0 0 4px; font-size: 12px; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-secondary);
+}
+.item-build-icons { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.item-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 2px 8px 2px 2px; font-size: 12px; background: var(--surface-1);
+}
+.item-chip img { border-radius: 4px; }
+.item-chip-remove { margin-left: 2px; }
+.item-build-section-editor {
+  border: 1px solid var(--grid); border-radius: 8px; padding: 8px 10px;
+}
+.item-section-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.item-section-label { flex: 1; }
+.item-add-btn { font-size: 12px; padding: 2px 8px; }
+.item-section-add { align-self: flex-start; }
+.item-picker {
+  border: 1px solid var(--series-1); border-radius: 8px; padding: 8px;
+  background: var(--surface-1); max-width: 360px;
+}
+.item-picker input[type="text"] { width: 100%; margin-bottom: 6px; }
+.item-picker-results {
+  display: flex; flex-direction: column; max-height: 220px; overflow-y: auto; gap: 2px;
+}
+.item-picker-result {
+  display: flex; align-items: center; gap: 8px; text-align: left;
+  padding: 4px 6px; font-size: 13px; border-radius: 4px;
+}
+.item-picker-result:hover { background: var(--accent-wash); }
+.item-picker-close { margin-top: 6px; }
+
+/* ---------- research view ---------- */
+.research-screenshots {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px; margin: 6px 0;
+}
+.research-screenshot {
+  position: relative; border: 1px solid var(--grid); border-radius: 8px;
+  padding: 6px; text-align: center;
+}
+.research-screenshot img { max-width: 100%; border-radius: 4px; display: block; }
+.research-screenshot .chip-x { position: absolute; top: 2px; right: 4px; background: var(--surface-1); }
+
 /* ---------- champ guide view ---------- */
 .mu-guide-link { font-size: 14px; }
 #guide-list .guide-row {
@@ -878,10 +926,13 @@ td.rank-cell { font-size: 12px; line-height: 1.5; }
   font-size: 12px; padding: 1px 0;
 }
 .rune-detail-item img { border-radius: 50%; background: var(--surface-1); }
-.rune-page-display { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.rune-page-display img { border-radius: 50%; background: var(--surface-1); }
-.rune-page-minors { display: flex; gap: 2px; }
-.rune-page-shards { display: flex; gap: 2px; margin-left: 4px; }
+.rune-page-display {
+  display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;
+  overflow-x: auto;
+}
+.rune-page-display img { border-radius: 50%; background: var(--surface-1); flex: none; }
+.rune-page-minors { display: flex; gap: 2px; flex: none; }
+.rune-page-shards { display: flex; gap: 2px; margin-left: 4px; flex: none; }
 .rune-keystone-icon { margin-right: 2px; }
 .rune-tree-icon { margin: 0 2px 0 6px; }
 

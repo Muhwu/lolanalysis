@@ -43,7 +43,28 @@ def test_markdown_flowables_blank_text_shows_placeholder():
     assert "No notes" in flowables[0].text
 
 
-def test_build_champion_guide_pdf_returns_valid_pdf_bytes():
+ITEM_BUILD = {
+    "core": ["Riftmaker", "Nashor's Tooth"],
+    "situational": [{"label": "vs heavy AP", "items": ["Zhonya's Hourglass"]}],
+}
+
+
+def _item_aware_get(url, timeout=5.0):
+    request = httpx.Request("GET", url)
+    if url == pdf_export.DDRAGON_VERSIONS_URL:
+        return httpx.Response(200, json=["14.20.1"], request=request)
+    if url == pdf_export.ITEM_DATA_URL.format(version="14.20.1"):
+        data = {"data": {
+            "3153": {"name": "Riftmaker", "image": {"full": "3153.png"}},
+            "3115": {"name": "Nashor's Tooth", "image": {"full": "3115.png"}},
+            "3157": {"name": "Zhonya's Hourglass", "image": {"full": "3157.png"}},
+        }}
+        return httpx.Response(200, json=data, request=request)
+    return httpx.Response(200, content=TINY_PNG, request=request)
+
+
+def test_build_champion_guide_pdf_returns_valid_pdf_bytes(monkeypatch):
+    monkeypatch.setattr(pdf_export.httpx, "get", _item_aware_get)
     guide = {
         "Darius": {
             "notes": "# Lane\n\nPlay **safe**.",
@@ -58,13 +79,13 @@ def test_build_champion_guide_pdf_returns_valid_pdf_bytes():
         },
         "Wukong": {"notes": "", "patch_version": "", "runes": []},
     }
-    pdf_bytes = pdf_export.build_champion_guide_pdf("Gwen", "General notes.", guide)
+    pdf_bytes = pdf_export.build_champion_guide_pdf("Gwen", "General notes.", ITEM_BUILD, guide)
     assert pdf_bytes.startswith(b"%PDF")
     assert len(pdf_bytes) > 500
 
 
-def test_build_champion_guide_pdf_empty_guide_does_not_crash():
-    pdf_bytes = pdf_export.build_champion_guide_pdf("Gwen", "", {})
+def test_build_champion_guide_pdf_empty_everything_does_not_crash():
+    pdf_bytes = pdf_export.build_champion_guide_pdf("Gwen", "", {"core": [], "situational": []}, {})
     assert pdf_bytes.startswith(b"%PDF")
 
 
@@ -81,7 +102,7 @@ def test_build_champion_guide_pdf_survives_icon_fetch_failure(monkeypatch):
             "shards": ["Adaptive Force", "Armor", "Health"],
         }],
     }}
-    pdf_bytes = pdf_export.build_champion_guide_pdf("Gwen", "", guide)
+    pdf_bytes = pdf_export.build_champion_guide_pdf("Gwen", "", ITEM_BUILD, guide)
     assert pdf_bytes.startswith(b"%PDF")
 
 

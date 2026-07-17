@@ -117,6 +117,13 @@ CREATE TABLE IF NOT EXISTS champion_notes (
     updated_at_ms INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS champion_item_builds (
+    champion TEXT PRIMARY KEY,
+    core TEXT NOT NULL DEFAULT '[]',
+    situational TEXT NOT NULL DEFAULT '[]',
+    updated_at_ms INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS participant_runes (
     match_id TEXT NOT NULL,
     puuid TEXT NOT NULL,
@@ -135,6 +142,26 @@ CREATE TABLE IF NOT EXISTS clips (
     created_at_ms INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_clips_owner ON clips(owner_type, owner_id);
+
+CREATE TABLE IF NOT EXISTS research_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_name TEXT NOT NULL DEFAULT '',
+    champion TEXT NOT NULL DEFAULT '',
+    opp_champion TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at_ms INTEGER,
+    updated_at_ms INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS research_screenshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id INTEGER NOT NULL,
+    caption TEXT NOT NULL DEFAULT '',
+    file_name TEXT NOT NULL,
+    created_at_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_research_screenshots_entry ON research_screenshots(entry_id);
 
 CREATE TABLE IF NOT EXISTS rank_history (
     puuid TEXT NOT NULL,
@@ -357,6 +384,34 @@ def set_champion_note(conn, champion, notes):
                 ON CONFLICT(champion) DO UPDATE SET
                   notes=excluded.notes, updated_at_ms=excluded.updated_at_ms""",
             (champion, notes))
+
+
+def get_item_build(conn, champion):
+    """Item build for a champion: a core (ordered) list of item names, plus
+    labeled situational sections (each its own small item list) — e.g.
+    "vs heavy AP": ["Item A", "Item B"]. Empty defaults when none recorded."""
+    row = conn.execute(
+        "SELECT core, situational FROM champion_item_builds WHERE champion=?",
+        (champion,)).fetchone()
+    if not row:
+        return {"core": [], "situational": []}
+    return {"core": json.loads(row["core"]), "situational": json.loads(row["situational"])}
+
+
+def set_item_build(conn, champion, core, situational):
+    """Upsert a champion's item build; fully blank (no core items, no
+    situational sections) deletes the row."""
+    with conn:
+        if not core and not situational:
+            conn.execute("DELETE FROM champion_item_builds WHERE champion=?", (champion,))
+            return
+        conn.execute(
+            f"""INSERT INTO champion_item_builds (champion, core, situational, updated_at_ms)
+                VALUES (?, ?, ?, {_now_expr()})
+                ON CONFLICT(champion) DO UPDATE SET
+                  core=excluded.core, situational=excluded.situational,
+                  updated_at_ms=excluded.updated_at_ms""",
+            (champion, json.dumps(core), json.dumps(situational)))
 
 
 def record_rank_history(conn, puuid, tier, division, lp, fetched_at_ms):
@@ -779,3 +834,68 @@ def delete_clips_for_block(conn, block_id):
             """DELETE FROM clips WHERE owner_type='block_game' AND owner_id IN
                (SELECT id FROM block_games WHERE block_id=?)""", (block_id,))
     return [r["file_name"] for r in rows if r["file_name"]]
+
+
+# ---------- research entries (VOD review of other players' games) ----------
+
+def create_research_entry(conn, player_name, champion, opp_champion, title, notes):
+    with conn:
+        cursor = conn.execute(
+            f"""INSERT INTO research_entries
+                (player_name, champion, opp_champion, title, notes, created_at_ms, updated_at_ms)
+                VALUES (?, ?, ?, ?, ?, {_now_expr()}, {_now_expr()})""",
+            (player_name, champion, opp_champion, title, notes))
+    return cursor.lastrowid
+
+
+def list_research_entries(conn):
+    """Newest first — matches the sessions/blocks list convention."""
+    return conn.execute("SELECT * FROM research_entries ORDER BY created_at_ms DESC").fetchall()
+
+
+def get_research_entry(conn, entry_id):
+    return conn.execute("SELECT * FROM research_entries WHERE id=?", (entry_id,)).fetchone()
+
+
+def update_research_entry(conn, entry_id, player_name, champion, opp_champion, title, notes):
+    with conn:
+        cursor = conn.execute(
+            f"""UPDATE research_entries SET player_name=?, champion=?, opp_champion=?,
+                title=?, notes=?, updated_at_ms={_now_expr()} WHERE id=?""",
+            (player_name, champion, opp_champion, title, notes, entry_id))
+    return cursor.rowcount > 0
+
+
+def delete_research_entry(conn, entry_id):
+    """Deletes the entry row only — the caller (app.py) fetches/unlinks its
+    screenshot files first, same division of responsibility as
+    sessions/blocks (db.py never touches the filesystem)."""
+    with conn:
+        conn.execute("DELETE FROM research_screenshots WHERE entry_id=?", (entry_id,))
+        cursor = conn.execute("DELETE FROM research_entries WHERE id=?", (entry_id,))
+    return cursor.rowcount > 0
+
+
+def add_research_screenshot(conn, entry_id, caption, file_name):
+    with conn:
+        cursor = conn.execute(
+            f"""INSERT INTO research_screenshots (entry_id, caption, file_name, created_at_ms)
+                VALUES (?, ?, ?, {_now_expr()})""",
+            (entry_id, caption, file_name))
+    return cursor.lastrowid
+
+
+def list_research_screenshots(conn, entry_id):
+    return conn.execute(
+        "SELECT * FROM research_screenshots WHERE entry_id=? ORDER BY id",
+        (entry_id,)).fetchall()
+
+
+def get_research_screenshot(conn, screenshot_id):
+    return conn.execute("SELECT * FROM research_screenshots WHERE id=?", (screenshot_id,)).fetchone()
+
+
+def delete_research_screenshot(conn, screenshot_id):
+    with conn:
+        cursor = conn.execute("DELETE FROM research_screenshots WHERE id=?", (screenshot_id,))
+    return cursor.rowcount > 0

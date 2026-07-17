@@ -72,9 +72,24 @@ MAX_BACKGROUND_BYTES = 15 * 1024 * 1024  # 15 MB
 ALLOWED_BACKGROUND_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 
+def get_research_screenshots_dir() -> Path:
+    d = get_db_path().parent / "research-screenshots"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+MAX_SCREENSHOT_BYTES = 15 * 1024 * 1024  # 15 MB
+ALLOWED_SCREENSHOT_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+
 def _unlink_clip_files(file_names):
     for name in file_names:
         (get_clips_dir() / name).unlink(missing_ok=True)
+
+
+def _unlink_screenshot_files(file_names):
+    for name in file_names:
+        (get_research_screenshots_dir() / name).unlink(missing_ok=True)
 
 
 def parse_time_range(params: dict, now_ms: int | None = None):
@@ -117,7 +132,7 @@ def api_version():
     return {"version": config.app_version(), "repo": config.GITHUB_REPO}
 
 
-HIDEABLE_VIEWS = {"overview", "matchups", "progress", "trends", "blocks", "guide"}
+HIDEABLE_VIEWS = {"overview", "matchups", "progress", "trends", "blocks", "guide", "research"}
 HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
@@ -653,6 +668,54 @@ def api_put_champion_note(champion: str, body: dict):
         conn.close()
 
 
+MAX_CORE_ITEMS = 6
+MAX_SITUATIONAL_SECTIONS = 12
+MAX_ITEMS_PER_SECTION = 5
+
+
+@app.get("/api/champions/item-build/{champion}")
+def api_get_item_build(champion: str):
+    conn = get_conn()
+    try:
+        return db.get_item_build(conn, champion)
+    finally:
+        conn.close()
+
+
+def _validate_item_build(core, situational):
+    if (not isinstance(core, list) or len(core) > MAX_CORE_ITEMS
+            or not all(isinstance(i, str) and i.strip() for i in core)):
+        raise HTTPException(400, f"core must be a list of up to {MAX_CORE_ITEMS} item names")
+    if not isinstance(situational, list) or len(situational) > MAX_SITUATIONAL_SECTIONS:
+        raise HTTPException(400, f"situational must be a list of up to {MAX_SITUATIONAL_SECTIONS} sections")
+    cleaned_situational = []
+    for section in situational:
+        if not isinstance(section, dict):
+            raise HTTPException(400, "each situational section must be an object")
+        label = str(section.get("label") or "").strip()
+        items = section.get("items") or []
+        if not label:
+            raise HTTPException(400, "each situational section needs a label")
+        if (not isinstance(items, list) or len(items) > MAX_ITEMS_PER_SECTION
+                or not all(isinstance(i, str) and i.strip() for i in items)):
+            raise HTTPException(400, f"each situational section holds up to {MAX_ITEMS_PER_SECTION} items")
+        cleaned_situational.append({"label": label, "items": [i.strip() for i in items]})
+    return [i.strip() for i in core], cleaned_situational
+
+
+@app.put("/api/champions/item-build/{champion}")
+def api_put_item_build(champion: str, body: dict):
+    body = body or {}
+    _validate_champion(champion)
+    core, situational = _validate_item_build(body.get("core") or [], body.get("situational") or [])
+    conn = get_conn()
+    try:
+        db.set_item_build(conn, champion, core, situational)
+        return {"saved": True}
+    finally:
+        conn.close()
+
+
 EXPORT_KIND = "champ-guide-export"
 EXPORT_VERSION = 1
 
@@ -669,6 +732,7 @@ def api_export_champ_guide(body: dict):
     try:
         payload = {
             "general_notes": db.get_champion_note(conn, my_champion),
+            "item_build": db.get_item_build(conn, my_champion),
             "guide": db.get_matchup_notes(conn, my_champion),
         }
     finally:
@@ -698,10 +762,11 @@ def api_export_champ_guide_pdf(my_champion: str):
     conn = get_conn()
     try:
         general_notes = db.get_champion_note(conn, my_champion)
+        item_build = db.get_item_build(conn, my_champion)
         guide = db.get_matchup_notes(conn, my_champion)
     finally:
         conn.close()
-    pdf_bytes = pdf_export.build_champion_guide_pdf(my_champion, general_notes, guide)
+    pdf_bytes = pdf_export.build_champion_guide_pdf(my_champion, general_notes, item_build, guide)
     filename = f"champ-guide-{my_champion.lower()}.pdf"
     return Response(
         content=pdf_bytes, media_type="application/pdf",
@@ -725,7 +790,11 @@ def _decode_champ_guide_export(body):
         except ValueError:
             raise HTTPException(401, "wrong password or corrupt file")
     else:
-        payload = {"general_notes": data.get("general_notes", ""), "guide": data.get("guide") or {}}
+        payload = {
+            "general_notes": data.get("general_notes", ""),
+            "item_build": data.get("item_build") or {"core": [], "situational": []},
+            "guide": data.get("guide") or {},
+        }
     # Validate the payload shape here so both preview and import reject a
     # malformed/hand-edited file with a 400 instead of a 500, and so import
     # applies the same rune validation as the PUT endpoint.
@@ -753,11 +822,13 @@ def api_import_champ_guide_preview(body: dict):
     finally:
         conn.close()
     opponents = list((payload.get("guide") or {}).keys())
+    item_build = payload.get("item_build") or {}
     return {
         "my_champion": my_champion,
         "opponents": opponents,
         "will_overwrite": sorted(existing & set(opponents)),
         "has_general_notes": bool(payload.get("general_notes")),
+        "has_item_build": bool(item_build.get("core") or item_build.get("situational")),
     }
 
 
@@ -769,6 +840,11 @@ def api_import_champ_guide(body: dict):
     try:
         if payload.get("general_notes"):
             db.set_champion_note(conn, my_champion, payload["general_notes"])
+        item_build = payload.get("item_build") or {}
+        if item_build.get("core") or item_build.get("situational"):
+            core, situational = _validate_item_build(
+                item_build.get("core") or [], item_build.get("situational") or [])
+            db.set_item_build(conn, my_champion, core, situational)
         guide = payload.get("guide") or {}
         for opp_champion, entry in guide.items():
             _validate_champion(opp_champion)
@@ -1175,6 +1251,150 @@ def api_delete_block(block_id: int):
         return {"deleted": True}
     finally:
         conn.close()
+
+
+def _research_entry_dict(conn, row):
+    d = dict(row)
+    d["screenshots"] = [
+        {**dict(s), "file_url": f"/api/research/screenshots/{s['id']}/file"}
+        for s in db.list_research_screenshots(conn, d["id"])]
+    return d
+
+
+def _validate_champion_if_given(champion):
+    if champion:
+        _validate_champion(champion)
+
+
+@app.get("/api/research")
+def api_list_research():
+    conn = get_conn()
+    try:
+        return [dict(r) for r in db.list_research_entries(conn)]
+    finally:
+        conn.close()
+
+
+@app.get("/api/research/{entry_id}")
+def api_get_research_entry(entry_id: int):
+    conn = get_conn()
+    try:
+        row = db.get_research_entry(conn, entry_id)
+        if not row:
+            raise HTTPException(404, "no such research entry")
+        return _research_entry_dict(conn, row)
+    finally:
+        conn.close()
+
+
+@app.post("/api/research")
+def api_create_research_entry(body: dict):
+    body = body or {}
+    player_name = str(body.get("player_name") or "").strip()
+    champion = str(body.get("champion") or "").strip()
+    opp_champion = str(body.get("opp_champion") or "").strip()
+    if not player_name:
+        raise HTTPException(400, "player_name is required")
+    _validate_champion_if_given(champion)
+    _validate_champion_if_given(opp_champion)
+    conn = get_conn()
+    try:
+        entry_id = db.create_research_entry(
+            conn, player_name, champion, opp_champion,
+            str(body.get("title") or ""), str(body.get("notes") or ""))
+        return _research_entry_dict(conn, db.get_research_entry(conn, entry_id))
+    finally:
+        conn.close()
+
+
+@app.patch("/api/research/{entry_id}")
+def api_update_research_entry(entry_id: int, body: dict):
+    body = body or {}
+    conn = get_conn()
+    try:
+        existing = db.get_research_entry(conn, entry_id)
+        if not existing:
+            raise HTTPException(404, "no such research entry")
+        player_name = str(body.get("player_name", existing["player_name"]) or "").strip()
+        champion = str(body.get("champion", existing["champion"]) or "").strip()
+        opp_champion = str(body.get("opp_champion", existing["opp_champion"]) or "").strip()
+        if not player_name:
+            raise HTTPException(400, "player_name is required")
+        _validate_champion_if_given(champion)
+        _validate_champion_if_given(opp_champion)
+        db.update_research_entry(
+            conn, entry_id, player_name, champion, opp_champion,
+            str(body.get("title", existing["title"]) or ""),
+            str(body.get("notes", existing["notes"]) or ""))
+        return _research_entry_dict(conn, db.get_research_entry(conn, entry_id))
+    finally:
+        conn.close()
+
+
+@app.delete("/api/research/{entry_id}")
+def api_delete_research_entry(entry_id: int):
+    conn = get_conn()
+    try:
+        screenshots = db.list_research_screenshots(conn, entry_id)
+        if not db.delete_research_entry(conn, entry_id):
+            raise HTTPException(404, "no such research entry")
+        _unlink_screenshot_files([s["file_name"] for s in screenshots])
+        return {"deleted": True}
+    finally:
+        conn.close()
+
+
+@app.post("/api/research/{entry_id}/screenshots")
+async def api_add_research_screenshot(entry_id: int, caption: str = Form(""),
+                                      file: UploadFile = File(...)):
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in ALLOWED_SCREENSHOT_EXTENSIONS:
+        raise HTTPException(
+            400, f"unsupported file type {ext or '(none)'} — "
+                 f"allowed: {', '.join(sorted(ALLOWED_SCREENSHOT_EXTENSIONS))}")
+    data = await file.read(MAX_SCREENSHOT_BYTES + 1)
+    if len(data) > MAX_SCREENSHOT_BYTES:
+        raise HTTPException(413, "screenshot exceeds the 15 MB limit")
+    conn = get_conn()
+    try:
+        if not db.get_research_entry(conn, entry_id):
+            raise HTTPException(404, "no such research entry")
+        stored_name = f"{uuid.uuid4().hex}{ext}"
+        (get_research_screenshots_dir() / stored_name).write_bytes(data)
+        db.add_research_screenshot(conn, entry_id, caption, stored_name)
+        return [{**dict(s), "file_url": f"/api/research/screenshots/{s['id']}/file"}
+                for s in db.list_research_screenshots(conn, entry_id)]
+    finally:
+        conn.close()
+
+
+@app.get("/api/research/screenshots/{screenshot_id}/file")
+def api_research_screenshot_file(screenshot_id: int):
+    conn = get_conn()
+    try:
+        screenshot = db.get_research_screenshot(conn, screenshot_id)
+    finally:
+        conn.close()
+    if not screenshot:
+        raise HTTPException(404, "screenshot not found")
+    path = get_research_screenshots_dir() / screenshot["file_name"]
+    if not path.exists():
+        raise HTTPException(404, "screenshot file missing on disk")
+    return FileResponse(path)
+
+
+@app.delete("/api/research/screenshots/{screenshot_id}")
+def api_delete_research_screenshot(screenshot_id: int):
+    conn = get_conn()
+    try:
+        screenshot = db.get_research_screenshot(conn, screenshot_id)
+        if not screenshot:
+            raise HTTPException(404, "screenshot not found")
+        db.delete_research_screenshot(conn, screenshot_id)
+    finally:
+        conn.close()
+    _unlink_screenshot_files([screenshot["file_name"]])
+    return {"deleted": True}
 
 
 def _clip_dict(row):

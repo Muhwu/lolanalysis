@@ -498,6 +498,44 @@ def test_champion_note_roundtrip(conn):
     assert db.get_champion_note(conn, "Gwen") == ""
 
 
+def test_item_build_roundtrip(conn):
+    assert db.get_item_build(conn, "Gwen") == {"core": [], "situational": []}
+    core = ["Riftmaker", "Nashor's Tooth"]
+    situational = [{"label": "vs heavy AP", "items": ["Zhonya's Hourglass"]}]
+    db.set_item_build(conn, "Gwen", core, situational)
+    assert db.get_item_build(conn, "Gwen") == {"core": core, "situational": situational}
+    db.set_item_build(conn, "Gwen", ["Riftmaker"], [])
+    assert db.get_item_build(conn, "Gwen") == {"core": ["Riftmaker"], "situational": []}
+    db.set_item_build(conn, "Gwen", [], [])  # fully blank deletes
+    assert db.get_item_build(conn, "Gwen") == {"core": [], "situational": []}
+    assert conn.execute(
+        "SELECT COUNT(*) AS c FROM champion_item_builds WHERE champion='Gwen'"
+    ).fetchone()["c"] == 0
+
+
+def test_research_entry_crud_and_cascade_delete(conn):
+    entry_id = db.create_research_entry(
+        conn, "Faker", "Azir", "Zed", "Level 1 pathing", "Interesting recall timing")
+    entry = db.get_research_entry(conn, entry_id)
+    assert entry["player_name"] == "Faker"
+    assert entry["champion"] == "Azir" and entry["opp_champion"] == "Zed"
+    assert [dict(r) for r in db.list_research_entries(conn)][0]["id"] == entry_id
+
+    assert db.update_research_entry(
+        conn, entry_id, "Faker", "Azir", "Zed", "Level 1 pathing", "updated notes") is True
+    assert db.get_research_entry(conn, entry_id)["notes"] == "updated notes"
+    assert db.update_research_entry(conn, 999, "x", "", "", "", "") is False
+
+    shot_id = db.add_research_screenshot(conn, entry_id, "level 1 setup", "abc.png")
+    assert db.get_research_screenshot(conn, shot_id)["caption"] == "level 1 setup"
+    assert len(db.list_research_screenshots(conn, entry_id)) == 1
+
+    assert db.delete_research_entry(conn, entry_id) is True
+    assert db.get_research_entry(conn, entry_id) is None
+    assert db.list_research_screenshots(conn, entry_id) == []
+    assert db.delete_research_entry(conn, 999) is False
+
+
 def test_close_block_early_and_next_game_starts_new_block(conn):
     ids = _seed_block_matches(conn, 3)
     assert db.add_game_to_block(conn, ids[0], "me") == 1
@@ -532,6 +570,8 @@ def test_upgrade_from_older_db_preserves_all_notes(tmp_path):
     db.update_block(c, 1, learnings="learned things")
     db.set_matchup_note(c, "Gwen", "Darius", notes="matchup note", runes=[CONQ_PAGE])
     db.set_champion_note(c, "Gwen", "general champion note")
+    db.set_item_build(c, "Gwen", ["Riftmaker"], [{"label": "vs AP", "items": ["Zhonya's Hourglass"]}])
+    research_id = db.create_research_entry(c, "Faker", "Azir", "Zed", "Level 1", "keep this too")
     # drop a column added by a later version to mimic an older schema
     c.execute("ALTER TABLE blocks DROP COLUMN closed_at_ms")
     c.commit()
@@ -543,6 +583,9 @@ def test_upgrade_from_older_db_preserves_all_notes(tmp_path):
     assert db.get_matchup_notes(c, "Gwen") == {"Darius": {
         "notes": "matchup note", "runes": [CONQ_PAGE], "patch_version": ""}}
     assert db.get_champion_note(c, "Gwen") == "general champion note"
+    assert db.get_item_build(c, "Gwen") == {
+        "core": ["Riftmaker"], "situational": [{"label": "vs AP", "items": ["Zhonya's Hourglass"]}]}
+    assert db.get_research_entry(c, research_id)["notes"] == "keep this too"
     assert c.execute("SELECT closed_at_ms FROM blocks").fetchone()["closed_at_ms"] is None
     c.close()
 
