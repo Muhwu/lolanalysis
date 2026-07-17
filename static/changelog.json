@@ -1,6 +1,17 @@
 {
   "entries": [
     {
+      "version": "1.25.0",
+      "date": "2026-07-17",
+      "items": [
+        "Older matchup notes (pre-champ-guide) now surface in Settings — migrate them under one of your champions, or delete them (replaces the one-time startup popup)",
+        "Default champion setting — pre-selects your champion on the Champ guide page",
+        "Champ guide design pass: consistent Markdown editor, patch dropdown defaulting to the current patch (validated), properly sized champion icons, opponent picker only lists champions without a guide, clearer empty-state",
+        "Clips section design pass: add-clip form now folds behind a + Add clip button and matches the app's form styling",
+        "Fixed the Fiddlesticks champion icon never loading (match-v5 vs DDragon spelling mismatch)"
+      ]
+    },
+    {
       "version": "1.24.0",
       "date": "2026-07-17",
       "items": [

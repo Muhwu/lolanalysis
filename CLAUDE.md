@@ -223,15 +223,21 @@ single primary_keystone/secondary_tree columns collapsed into the `runes`
 list, across two migrations in `db._migrate` (SQLite can't ALTER a primary
 key, so both rebuild the table) — old rows land at `my_champion=''` since
 neither predecessor schema tracked which champion notes were written for.
-Those `my_champion=''` rows are unreachable from the guide UI, so on
-startup the app offers — once — to export them as Markdown (`GET
-/api/matchups/legacy-notes` for {count, prompted, notes}, `POST
-/api/matchups/legacy-notes/dismiss` flips the `legacy_notes_prompted`
-settings key; `maybeLegacyNotesPrompt` in app.js writes one .md per
-matchup via showDirectoryPicker, falling back to a combined .md download).
-Declining or completing the export dismisses it for good; cancelling the
-folder picker re-offers next launch. The rows themselves are never
-deleted.
+Those `my_champion=''` rows are unreachable from the guide UI, so Settings
+shows an "Older matchup notes" section (only while such rows exist —
+`refreshLegacySection` in app.js) with Migrate (a champion select; `POST
+/api/matchups/legacy-notes/migrate` reassigns the rows to that champion,
+skipping opponents it already has a guide for and reporting them back as
+`skipped`) and Delete (`DELETE /api/matchups/legacy-notes`, confirm()ed —
+the one user-content delete that's allowed, since it's explicit). `GET
+/api/matchups/legacy-notes` returns {count, notes}. `patch_version` is
+validated everywhere it's written (`PATCH_VERSION_RE`, e.g. 16.14 or
+16.14.1, or empty); the guide editor offers a patch dropdown built from
+DDragon versions.json (cached in `state.ddragonVersions` by
+`loadDdragonVersion`, major.minor deduped), defaulting to the current
+patch. `default_champion` (settings key, validated champion or unset)
+pre-selects the Champ guide's "My champion" — reuse it for any future
+your-champion-scoped feature (`state.defaultChampion` client-side).
 `champion_notes(champion PK, notes, updated_at_ms)` — general (non-matchup)
 Markdown notes for a champion (build order, itemization…), shown above the
 matchup list on the Champ guide page. `GET`/`PUT /api/champions/notes/
@@ -309,6 +315,9 @@ app's lazy-load convention.
 
 ## Development rules
 
+- **All UI work follows `STYLE.md`** — theme variables (never hardcode
+  accent/surface colors), shared component patterns (buttons, editors,
+  badges, collapsed add-forms), and the design-pass checklist live there.
 - **All notes render as Markdown wherever they are displayed** — session
   notes, block learnings, block-game notes, matchup notes, champion notes,
   and any future note field. Use `renderNotes(...)` (vendored marked) inside

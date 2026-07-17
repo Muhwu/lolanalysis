@@ -108,13 +108,17 @@ async function initGuide() {
 
 async function loadGuideChampionOptions() {
   // full roster, so you can prep a guide for a champion you haven't (or
-  // haven't yet) played — default the initial selection to one you have
-  // played, when available, so the page opens on real data
+  // haven't yet) played — the initial selection is the default champion from
+  // Settings when set, else one you have played, so the page opens on real data
   const all = [...roster.nameById.keys()].sort(
     (a, b) => champDisplay(a).localeCompare(champDisplay(b)));
   if (!guideState.myChampion) {
-    const played = await getJSON(`/api/filters?${accountParams()}`);
-    guideState.myChampion = played.champions[0] || all[0] || "";
+    if (state.defaultChampion) {
+      guideState.myChampion = state.defaultChampion;
+    } else {
+      const played = await getJSON(`/api/filters?${accountParams()}`);
+      guideState.myChampion = played.champions[0] || all[0] || "";
+    }
   }
   $("#guide-champion").innerHTML = all.length
     ? all.map((c) =>
@@ -143,6 +147,20 @@ async function loadGuide() {
   guideState.generalNotes = general.notes;
   renderGuide();
   renderGuideGeneral();
+  updateGuideAddOptions();
+}
+
+// "Add a matchup" dropdown: full roster minus opponents that already have a
+// guide for the selected champion (those are edited via their own row)
+function updateGuideAddOptions() {
+  const select = $("#guide-add-select");
+  const previous = select.value;
+  const options = [...roster.nameById.keys()]
+    .filter((c) => !guideState.guide[c])
+    .sort((a, b) => champDisplay(a).localeCompare(champDisplay(b)));
+  select.innerHTML = `<option value="">– pick an opponent –</option>` + options.map((c) =>
+    `<option value="${c}">${escapeHtml(champDisplay(c))}</option>`).join("");
+  if (options.includes(previous)) select.value = previous;
 }
 
 // fetch a matchup's recent games on first expand only (collapsed rows never
@@ -157,14 +175,12 @@ async function ensureMatchupGames(champ) {
 }
 
 async function addGuideMatchup() {
-  const typed = $("#guide-add-input").value.trim();
-  if (!typed) return;
-  const champ = roster.byLookup.get(typed.toLowerCase());
+  const champ = $("#guide-add-select").value;
   if (!champ) {
-    $("#guide-add-status").textContent = `"${typed}" is not a champion`;
+    $("#guide-add-status").textContent = "pick an opponent first";
     return;
   }
-  $("#guide-add-input").value = "";
+  $("#guide-add-select").value = "";
   $("#guide-add-status").textContent = "";
   addOrFocusMatchup(champ);
   renderGuide();
@@ -185,7 +201,36 @@ function startEditing(champ) {
   guideState.editing = champ;
   guideState.draft = guideFor(champ);
   guideState.draft.runes = guideState.draft.runes.map((p) => ({ ...emptyRunePage(), ...p }));
+  if (!guideState.draft.patch_version) guideState.draft.patch_version = currentPatch();
   guideState.openRuneIndex = null;
+}
+
+// live game patches from DDragon's versions.json ("16.14.1" → "16.14"),
+// newest first — cached in app.js's loadDdragonVersion
+function currentPatch() {
+  return (state.ddragonVersion || "").split(".").slice(0, 2).join(".");
+}
+
+function knownPatches() {
+  const seen = new Set();
+  for (const v of state.ddragonVersions || []) {
+    seen.add(v.split(".").slice(0, 2).join("."));
+  }
+  return [...seen];
+}
+
+function patchPicker(selected) {
+  const patches = knownPatches();
+  if (!patches.length) {
+    // offline / DDragon unreachable — plain validated text input instead
+    return `<input type="text" id="guide-patch" placeholder="e.g. ${currentPatch() || "16.14"}"
+      value="${escapeHtml(selected)}" style="max-width:10em">`;
+  }
+  if (selected && !patches.includes(selected)) patches.unshift(selected);
+  return `<select id="guide-patch" style="max-width:10em">
+    <option value="">– none –</option>
+    ${patches.map((p) => `<option value="${escapeHtml(p)}" ${p === selected ? "selected" : ""}>${escapeHtml(p)}</option>`).join("")}
+  </select>`;
 }
 
 // ---------- rune page picker ----------
@@ -372,37 +417,40 @@ function guideRow(m) {
       </div>
     </div>`;
   }
+  const { notes, runes, patch_version } = guideFor(champ);
+  const hasAny = notes || (runes && runes.length) || patch_version;
   let body;
   if (editing) {
     const draft = guideState.draft;
     body = `${runePagesBuilder()}
       <label class="filter-label" for="guide-patch">Patch</label>
-      <input type="text" id="guide-patch" placeholder="e.g. 14.14" value="${escapeHtml(draft.patch_version)}" style="max-width:10em">
-      <label class="filter-label" for="guide-notes">How to play this matchup</label>
+      ${patchPicker(draft.patch_version)}
+      <label class="filter-label" for="guide-notes">How to play this matchup (Markdown)</label>
       <textarea id="guide-notes" rows="8"
-        placeholder="Markdown supported — game plan, power spikes, bans…">${escapeHtml(draft.notes)}</textarea>
+        placeholder="Game plan, power spikes, bans…">${escapeHtml(draft.notes)}</textarea>
       <div class="session-actions">
         <button class="preset guide-save" data-opp="${escapeHtml(champ)}">Save</button>
         <button class="preset guide-cancel">Cancel</button>
         <span class="muted guide-status"></span>
       </div>`;
+  } else if (hasAny) {
+    body = `${runePagesDisplay(runes)}${
+      notes ? `<div class="md-body">${renderNotes(notes)}</div>` : ""}`;
   } else {
-    const { notes, runes, patch_version } = guideFor(champ);
-    const patchLine = patch_version
-      ? `<div class="muted mu-guide-patch">Patch ${escapeHtml(patch_version)}</div>` : "";
-    const notesBody = notes ? `<div class="md-body">${renderNotes(notes)}</div>` : "";
-    const hasAny = notes || (runes && runes.length) || patch_version;
-    body = `${runePagesDisplay(runes)}${patchLine}${notesBody}${
-      hasAny ? "" : `<p class="muted">No guide yet — click ✎ to add one.</p>`}`;
+    body = `<p class="muted">No guide yet —
+      <button type="button" class="link-btn guide-edit" data-opp="${escapeHtml(champ)}">click here to create one</button>.</p>`;
   }
+  const patchBadge = !editing && patch_version
+    ? `<span class="guide-patch-badge" title="Written for this patch">Patch ${escapeHtml(patch_version)}</span>` : "";
   const gamesSide = m.games > 0
     ? `<div class="guide-row-side">${recentGamesColumn(champ)}</div>` : "";
   return `<div class="mu-notes mu-guide guide-row" data-opp="${escapeHtml(champ)}">
     <div class="mu-notes-head">
       ${toggleBtn}
       <h4>${champIcon(champ)}${displayName(champ)}</h4>
+      ${patchBadge}
       ${statLine}
-      ${editing ? "" : `<button class="preset icon-btn guide-edit" data-opp="${escapeHtml(champ)}"
+      ${editing || !hasAny ? "" : `<button class="preset icon-btn guide-edit" data-opp="${escapeHtml(champ)}"
         title="Edit champ guide" aria-label="Edit champ guide">✎</button>`}
     </div>
     <div class="guide-row-grid">
@@ -517,6 +565,7 @@ function wireGuideHandlers(target) {
       guideState.draft = null;
       guideState.openRuneIndex = null;
       renderGuide();
+      updateGuideAddOptions();
     }));
 
   // rune page builder — only present while editing
@@ -546,6 +595,15 @@ function wireGuideHandlers(target) {
       guideState.draft.runes[+input.dataset.index].label = input.value;
       // no re-render needed — avoids losing focus mid-type
     }));
+  // keep the draft in sync so rune-click re-renders don't wipe typed text
+  const notesInput = target.querySelector("#guide-notes");
+  if (notesInput) notesInput.addEventListener("input", () => {
+    guideState.draft.notes = notesInput.value;
+  });
+  const patchInput = target.querySelector("#guide-patch");
+  if (patchInput) patchInput.addEventListener("change", () => {
+    guideState.draft.patch_version = patchInput.value;
+  });
   target.querySelectorAll("[data-role='primary-tree']").forEach((btn) =>
     btn.addEventListener("click", () => {
       const page = guideState.draft.runes[guideState.openRuneIndex];

@@ -144,6 +144,7 @@ def _extra_settings(conn):
         "ui_opacity": int(stored.get("ui_opacity") or 100),
         "background_image": bool(stored.get("background_image_file")),
         "accent_color": stored.get("accent_color") or None,
+        "default_champion": stored.get("default_champion") or None,
     }
 
 
@@ -248,6 +249,11 @@ def api_put_settings(body: dict):
     if accent_color is not None and (not isinstance(accent_color, str)
                                       or not HEX_COLOR_RE.match(accent_color)):
         raise HTTPException(400, "accent_color must be a #rrggbb hex string or null")
+    default_champion = body.get("default_champion")
+    if default_champion is not None:
+        if not isinstance(default_champion, str):
+            raise HTTPException(400, "default_champion must be a champion name or null")
+        _validate_champion(default_champion)
     conn = get_conn()
     try:
         db.set_settings(conn, {
@@ -262,6 +268,7 @@ def api_put_settings(body: dict):
             "block_gap_confirm": "1" if gap_confirm else "0",
             "ui_opacity": str(ui_opacity),
             "accent_color": accent_color or "",
+            "default_champion": default_champion or "",
         })
         settings = config.resolve_settings(conn)
         settings["platforms"] = sorted(PLATFORM_ROUTING)
@@ -568,6 +575,14 @@ def api_matchup_notes(my_champion: str):
         conn.close()
 
 
+PATCH_VERSION_RE = re.compile(r"^\d{1,3}\.\d{1,3}(\.\d{1,3})?$")
+
+
+def _validate_patch(patch_version: str):
+    if patch_version and not PATCH_VERSION_RE.match(patch_version):
+        raise HTTPException(400, "patch_version must look like 16.14 (or 16.14.1), or be empty")
+
+
 def _validate_rune_page(page):
     if not isinstance(page, dict):
         raise HTTPException(400, "each rune page must be an object")
@@ -599,13 +614,15 @@ def api_put_matchup_note(my_champion: str, opp_champion: str, body: dict):
         raise HTTPException(400, "runes must be a list of rune pages")
     for page in runes:
         _validate_rune_page(page)
+    patch_version = str(body.get("patch_version") or "").strip()
+    _validate_patch(patch_version)
     conn = get_conn()
     try:
         db.set_matchup_note(
             conn, my_champion, opp_champion,
             notes=str(body.get("notes") or ""),
             runes=runes,
-            patch_version=str(body.get("patch_version") or ""))
+            patch_version=patch_version)
         return {"saved": True}
     finally:
         conn.close()
@@ -721,6 +738,7 @@ def _decode_champ_guide_export(body):
             raise HTTPException(400, "runes must be a list of rune pages")
         for page in runes:
             _validate_rune_page(page)
+        _validate_patch(str((entry or {}).get("patch_version") or "").strip())
     return my_champion, payload
 
 
@@ -764,8 +782,8 @@ def api_import_champ_guide(body: dict):
 
 # Matchup notes written before the champ-guide update (v1.14.0) migrated to
 # my_champion='' — preserved, but unreachable from the per-champion guide UI.
-# These endpoints back a one-time startup prompt offering to export them as
-# Markdown; `legacy_notes_prompted` (settings) records that the offer was made.
+# These endpoints back a Settings section (shown only while such rows exist)
+# offering to migrate them under one of your champions, or delete them.
 
 
 @app.get("/api/matchups/legacy-notes")
@@ -775,25 +793,48 @@ def api_legacy_notes():
         rows = conn.execute(
             """SELECT opp_champion, notes, patch_version FROM matchup_notes
                WHERE my_champion='' AND notes != '' ORDER BY opp_champion""").fetchall()
-        prompted = db.get_settings(conn).get("legacy_notes_prompted") == "1"
     finally:
         conn.close()
     return {
         "count": len(rows),
-        "prompted": prompted,
         "notes": {r["opp_champion"]: {
             "notes": r["notes"], "patch_version": r["patch_version"]} for r in rows},
     }
 
 
-@app.post("/api/matchups/legacy-notes/dismiss")
-def api_legacy_notes_dismiss():
+@app.post("/api/matchups/legacy-notes/migrate")
+def api_legacy_notes_migrate(body: dict):
+    my_champion = (body or {}).get("my_champion")
+    if not my_champion:
+        raise HTTPException(400, "provide my_champion")
+    _validate_champion(my_champion)
     conn = get_conn()
     try:
-        db.set_settings(conn, {"legacy_notes_prompted": "1"})
+        with conn:
+            # never overwrite a guide already written for the target champion —
+            # those legacy rows stay put and are reported back as skipped
+            cursor = conn.execute(
+                """UPDATE matchup_notes SET my_champion=? WHERE my_champion=''
+                   AND opp_champion NOT IN
+                     (SELECT opp_champion FROM matchup_notes WHERE my_champion=?)""",
+                (my_champion, my_champion))
+            migrated = cursor.rowcount
+        skipped = [r["opp_champion"] for r in conn.execute(
+            "SELECT opp_champion FROM matchup_notes WHERE my_champion='' ORDER BY opp_champion")]
     finally:
         conn.close()
-    return {"dismissed": True}
+    return {"migrated": migrated, "skipped": skipped}
+
+
+@app.delete("/api/matchups/legacy-notes")
+def api_legacy_notes_delete():
+    conn = get_conn()
+    try:
+        with conn:
+            cursor = conn.execute("DELETE FROM matchup_notes WHERE my_champion=''")
+        return {"deleted": cursor.rowcount}
+    finally:
+        conn.close()
 
 
 @app.get("/api/stats/rank-history")

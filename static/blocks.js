@@ -118,6 +118,7 @@ function closeMenus() {
 const roster = { byLookup: new Map(), nameById: new Map() };
 
 async function loadChampionRoster() {
+  if (roster.nameById.size) return; // already loaded
   const data = await getJSON("/champions.json");
   for (const c of data.champions) {
     roster.byLookup.set(c.id.toLowerCase(), c.id);
@@ -536,7 +537,7 @@ function renderBlocks() {
     blockState.gameClipsCache.set(+ownerId,
       await getJSON(`/api/clips?owner_type=block_game&owner_id=${ownerId}`));
     renderBlocks();
-  });
+  }, () => renderBlocks());
 }
 
 // ---------- picker ----------

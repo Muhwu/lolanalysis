@@ -844,26 +844,83 @@ def test_champ_guide_export_validates_champion(client):
                       params={"my_champion": "NotAChamp"}).status_code == 400
 
 
-def test_legacy_notes_status_and_dismiss(client):
-    # nothing legacy: count 0, not prompted
-    info = client.get("/api/matchups/legacy-notes").json()
-    assert info == {"count": 0, "prompted": False, "notes": {}}
-    # seed rows as the migration leaves them: my_champion=''
+def _seed_legacy_notes(client):
+    # rows exactly as the champ-guide migration leaves them: my_champion=''
     conn = db.connect(app_module.get_db_path())
     db.set_matchup_note(conn, "", "Darius", notes="- care ghost timings")
     db.set_matchup_note(conn, "", "Teemo", notes="ban it")
     conn.close()
+
+
+def test_legacy_notes_status(client):
+    assert client.get("/api/matchups/legacy-notes").json() == {"count": 0, "notes": {}}
+    _seed_legacy_notes(client)
     info = client.get("/api/matchups/legacy-notes").json()
     assert info["count"] == 2
-    assert info["prompted"] is False
     assert info["notes"]["Darius"] == {"notes": "- care ghost timings", "patch_version": ""}
     # current-schema notes (real my_champion) are not "legacy"
-    client.put("/api/matchups/notes/Gwen/Darius", json={"notes": "new-style"})
+    client.put("/api/matchups/notes/Gwen/Renekton", json={"notes": "new-style"})
     assert client.get("/api/matchups/legacy-notes").json()["count"] == 2
-    assert client.post("/api/matchups/legacy-notes/dismiss").json() == {"dismissed": True}
-    info = client.get("/api/matchups/legacy-notes").json()
-    assert info["prompted"] is True
-    assert info["count"] == 2  # notes stay in the db; only the prompt flag flips
+
+
+def test_legacy_notes_migrate_moves_rows_and_skips_conflicts(client):
+    _seed_legacy_notes(client)
+    # Gwen already has her own Darius guide — the legacy Darius row must not clobber it
+    client.put("/api/matchups/notes/Gwen/Darius", json={"notes": "hand-written for Gwen"})
+    r = client.post("/api/matchups/legacy-notes/migrate", json={"my_champion": "Gwen"})
+    assert r.status_code == 200
+    assert r.json() == {"migrated": 1, "skipped": ["Darius"]}
+    guide = client.get("/api/matchups/notes?my_champion=Gwen").json()
+    assert guide["Teemo"]["notes"] == "ban it"
+    assert guide["Darius"]["notes"] == "hand-written for Gwen"  # untouched
+    assert client.get("/api/matchups/legacy-notes").json()["count"] == 1  # Darius stays legacy
+    # a conflict-free target champion takes the remainder
+    r = client.post("/api/matchups/legacy-notes/migrate", json={"my_champion": "Camille"})
+    assert r.json() == {"migrated": 1, "skipped": []}
+    assert client.get("/api/matchups/legacy-notes").json()["count"] == 0
+    assert client.get("/api/matchups/notes?my_champion=Camille").json()["Darius"]["notes"] \
+        == "- care ghost timings"
+    # validation
+    assert client.post("/api/matchups/legacy-notes/migrate", json={}).status_code == 400
+    assert client.post("/api/matchups/legacy-notes/migrate",
+                       json={"my_champion": "NotAChamp"}).status_code == 400
+
+
+def test_legacy_notes_delete(client):
+    _seed_legacy_notes(client)
+    client.put("/api/matchups/notes/Gwen/Darius", json={"notes": "keep me"})
+    assert client.delete("/api/matchups/legacy-notes").json() == {"deleted": 2}
+    assert client.get("/api/matchups/legacy-notes").json()["count"] == 0
+    # only legacy rows are deleted — real guides survive
+    assert client.get("/api/matchups/notes?my_champion=Gwen").json()["Darius"]["notes"] == "keep me"
+
+
+def test_default_champion_setting_endpoint(client):
+    assert client.get("/api/settings").json()["default_champion"] is None
+    assert _put_settings(client, default_champion="Gwen").status_code == 200
+    assert client.get("/api/settings").json()["default_champion"] == "Gwen"
+    assert _put_settings(client, default_champion=None).status_code == 200
+    assert client.get("/api/settings").json()["default_champion"] is None
+    assert _put_settings(client, default_champion="NotAChamp").status_code == 400
+    assert _put_settings(client, default_champion=123).status_code == 400
+
+
+def test_patch_version_validation(client):
+    ok = {"notes": "x", "patch_version": "16.14"}
+    assert client.put("/api/matchups/notes/Gwen/Darius", json=ok).status_code == 200
+    assert client.put("/api/matchups/notes/Gwen/Darius",
+                      json={"notes": "x", "patch_version": "16.14.1"}).status_code == 200
+    assert client.put("/api/matchups/notes/Gwen/Darius",
+                      json={"notes": "x", "patch_version": ""}).status_code == 200
+    for bad in ("current", "16", "16.14.1.2", "16.x", "a.b"):
+        assert client.put("/api/matchups/notes/Gwen/Darius",
+                          json={"notes": "x", "patch_version": bad}).status_code == 400
+    # import applies the same check
+    bad_export = {"data": {
+        "app": "coach-potato", "kind": "champ-guide-export", "version": 1,
+        "my_champion": "Gwen", "encrypted": False, "general_notes": "",
+        "guide": {"Darius": {"notes": "x", "patch_version": "not-a-patch"}}}}
+    assert client.post("/api/matchups/notes/import", json=bad_export).status_code == 400
 
 
 def test_close_block_rejects_empty_block(client):

@@ -272,7 +272,8 @@ tbody tr.games-row:hover td { background: var(--page); }
   border-top: 1px solid var(--grid);
   padding: 12px 16px;
 }
-.session-body textarea, .session-body input[type="text"] {
+/* shared Markdown-editor look: session notes, block learnings, champ guide */
+.session-body textarea, .session-body input[type="text"], .mu-notes textarea {
   width: 100%;
   font: inherit;
   font-size: 14px;
@@ -283,7 +284,9 @@ tbody tr.games-row:hover td { background: var(--page); }
   padding: 6px 8px;
   margin: 4px 0 10px;
 }
-.session-body textarea { font-family: ui-monospace, monospace; resize: vertical; }
+.session-body textarea, .mu-notes textarea {
+  font-family: ui-monospace, monospace; resize: vertical;
+}
 
 .md-body { max-width: 75ch; }
 .md-body h1, .md-body h2, .md-body h3 { font-size: 16px; margin: 12px 0 6px; }
@@ -746,8 +749,7 @@ td.rank-cell { font-size: 12px; line-height: 1.5; }
 .mu-notes { max-width: 720px; }
 .mu-notes-head { display: flex; align-items: center; gap: 8px; }
 .mu-notes-head h4 { margin: 0; }
-.mu-notes textarea { width: 100%; margin-top: 6px; }
-.mu-guide-patch { font-size: 12px; margin-bottom: 4px; }
+.legacy-notes-row { display: flex; align-items: center; gap: 8px; }
 .mu-block-notes { margin-top: 16px; max-width: 720px; }
 
 /* ---------- champ guide view ---------- */
@@ -758,9 +760,23 @@ td.rank-cell { font-size: 12px; line-height: 1.5; }
 }
 #guide-list .guide-row:last-child { border-bottom: none; }
 #guide-list .guide-row-collapsed { margin: 0; padding: 4px 0; }
-#guide-list .mu-notes-head h4 { display: flex; align-items: center; gap: 6px; }
-.guide-stat { margin-left: auto; font-size: 12px; }
+#guide-list .mu-notes-head h4 {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0; font-size: 15px; font-weight: 600;
+}
+/* champion portrait in guide headers — same size/shape as table .champ-cell */
+#guide-list .mu-notes-head h4 img { width: 24px; height: 24px; border-radius: 5px; display: block; }
+.guide-stat { margin-left: auto; font-size: 12px; white-space: nowrap; }
 .guide-toggle { margin-right: 2px; }
+.guide-patch-badge {
+  font-size: 11px; padding: 1px 8px; border-radius: 999px;
+  background: var(--accent-wash); border: 1px solid var(--border);
+  color: var(--text-secondary); white-space: nowrap;
+}
+.link-btn {
+  background: none; border: none; padding: 0; font: inherit;
+  color: var(--series-1); text-decoration: underline; cursor: pointer;
+}
 .guide-row-grid {
   display: grid; grid-template-columns: minmax(280px, 1fr) minmax(260px, 340px);
   gap: 20px; align-items: start; margin-top: 8px;
@@ -899,7 +915,7 @@ footer { margin-top: 36px; border-top: 1px solid var(--grid); padding-top: 10px;
 /* ---------- clips (coaching sessions + block games) ---------- */
 .clips-section { margin-top: 14px; max-width: 520px; }
 .clips-section h5 { margin: 0 0 6px; font-size: 12px; color: var(--text-secondary); }
-.clips-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+.clips-list:not(:empty) { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
 .clip-item {
   border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
   background: var(--surface-1);
@@ -908,11 +924,16 @@ footer { margin-top: 36px; border-top: 1px solid var(--grid); padding-top: 10px;
 .clip-label { font-size: 13px; font-weight: 600; flex: 1; }
 .clip-item video { width: 100%; max-height: 260px; border-radius: 6px; display: block; }
 .clip-item a { font-size: 13px; word-break: break-all; }
-.clip-add-form { display: flex; flex-direction: column; gap: 6px; }
+.clip-form-open { font-size: 12px; }
+.clip-add-form {
+  display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+  background: var(--surface-1);
+}
 .clip-add-form input[type="text"], .clip-add-form input[type="url"] {
-  font: inherit; font-size: 13px; padding: 4px 8px;
+  font: inherit; font-size: 13px; padding: 5px 8px;
   border: 1px solid var(--border); border-radius: 6px;
-  background: var(--surface-1); color: var(--text-primary);
+  background: var(--page); color: var(--text-primary);
 }
 .clip-add-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .clip-add-row input[type="file"] { font-size: 12px; max-width: 200px; }

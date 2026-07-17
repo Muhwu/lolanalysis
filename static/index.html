@@ -168,6 +168,15 @@
         tile, account tabs, rank chart, coaching/block rank columns. Rank history
         keeps being recorded and reappears when you untick this.</p>
     </div>
+    <div class="settings-field">
+      <label class="filter-label" for="setting-default-champion">My champion</label>
+      <select id="setting-default-champion" style="max-width:16em">
+        <option value="">– none –</option>
+      </select>
+      <p class="muted">Pre-selects this champion on the Champ guide page (and in
+        future champion-specific features). "– none –" falls back to your
+        most-played champion.</p>
+    </div>
 
     <h3 class="settings-group-head">Appearance</h3>
     <div class="settings-field">
@@ -195,6 +204,19 @@
       </div>
       <span id="setting-bg-status" class="muted"></span>
       <p class="muted">Uploads and applies immediately (up to 15 MB).</p>
+    </div>
+
+    <div id="legacy-notes-section" class="hidden">
+      <h3 class="settings-group-head">Older matchup notes</h3>
+      <div class="settings-field">
+        <p class="muted" id="legacy-notes-summary"></p>
+        <div class="legacy-notes-row">
+          <select id="legacy-migrate-champion" style="max-width:16em"></select>
+          <button id="legacy-migrate-btn" class="preset" type="button">Migrate</button>
+          <button id="legacy-delete-btn" class="preset" type="button">Delete</button>
+        </div>
+        <span id="legacy-notes-status" class="muted"></span>
+      </div>
     </div>
 
     <div class="settings-savebar">
@@ -342,10 +364,11 @@
   <h2>Champ guide</h2>
   <div id="guide-list"></div>
   <form id="guide-add-form" class="filter-row" style="margin-top:10px">
-    <div class="filter-group" style="flex:1">
-      <label class="filter-label" for="guide-add-input">Add a matchup</label>
-      <input type="text" id="guide-add-input" list="champ-list"
-        placeholder="opponent champion…" style="width:100%">
+    <div class="filter-group">
+      <label class="filter-label" for="guide-add-select">Add a matchup</label>
+      <select id="guide-add-select" style="max-width:16em">
+        <option value="">– pick an opponent –</option>
+      </select>
     </div>
     <button type="submit" class="preset">Add</button>
     <span id="guide-add-status" class="muted"></span>
