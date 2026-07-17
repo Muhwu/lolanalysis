@@ -23,6 +23,7 @@ const guideState = {
   guide: {},      // opp_champion -> {notes, runes: [rune page, ...], patch_version}
   games: new Map(), // opp_champion -> recent games list (each may carry a "runes" field)
   expanded: new Set(), // opp_champions currently expanded (collapsed by default)
+  openRunePages: new Set(), // "opp:index" rune pages expanded in read-only view
   editing: null,  // opp_champion whose editor is open
   draft: null,    // working copy of the guide being edited: {notes, patch_version, runes}
   openRuneIndex: null, // index into draft.runes currently expanded in the picker
@@ -129,6 +130,7 @@ async function loadGuideChampionOptions() {
 async function loadGuide() {
   guideState.games = new Map();
   guideState.expanded = new Set();
+  guideState.openRunePages = new Set();
   if (!guideState.myChampion) {
     guideState.matchups = [];
     guideState.guide = {};
@@ -142,6 +144,14 @@ async function loadGuide() {
     getJSON(`/api/matchups/notes?my_champion=${encodeURIComponent(guideState.myChampion)}`),
     getJSON(`/api/champions/notes/${encodeURIComponent(guideState.myChampion)}`),
   ]);
+  // a guide can exist for an opponent this champion has never faced (added
+  // by hand, imported, or migrated from pre-champ-guide notes) — give it a
+  // zero-games row so it always shows up
+  for (const opp of Object.keys(guide)) {
+    if (!matchups.some((m) => m.opp_champion === opp)) {
+      matchups.push({ opp_champion: opp, games: 0, winrate: null });
+    }
+  }
   guideState.matchups = matchups;
   guideState.guide = guide;
   guideState.generalNotes = general.notes;
@@ -349,15 +359,16 @@ function runePagesBuilder() {
 // pages (runePageCard) and the runes actually played in a past game
 // (recentGamesColumn's compact variant)
 function runeIconImg(name, tree, size, cls) {
-  return name
-    ? `<img class="${cls || ""}" src="${runeIconUrl(runeIcon(name, tree))}"
-        alt="${escapeHtml(name)}" title="${escapeHtml(name)}" width="${size}" height="${size}">`
-    : "";
+  if (!name) return "";
+  const icon = runeIcon(name, tree);
+  if (!icon) return ""; // unknown rune/tree (e.g. migrated legacy page) — no broken <img>
+  return `<img class="${cls || ""}" src="${runeIconUrl(icon)}"
+      alt="${escapeHtml(name)}" title="${escapeHtml(name)}" width="${size}" height="${size}">`;
 }
 
 function shardIconImg(name, row, size) {
   if (!name) return "";
-  const shard = SHARD_ROWS[row].shards.find((s) => s.name === name);
+  const shard = (SHARD_ROWS[row] || { shards: [] }).shards.find((s) => s.name === name);
   return shard
     ? `<img src="${shardIconUrl(shard.icon)}" alt="${escapeHtml(name)}" title="${escapeHtml(name)}" width="${size}" height="${size}">`
     : "";
@@ -381,18 +392,54 @@ function runePageIcons(page, { keystoneSize, minorSize, treeSize, shardSize }) {
     <div class="rune-page-shards">${shardIcons}</div>`;
 }
 
-function runePageCard(page, i) {
-  return `<div class="rune-page-card">
-    <div class="rune-page-title${page.label ? "" : " muted"}">${escapeHtml(page.label || `Page ${i + 1}`)}</div>
-    <div class="rune-page-display">${
-      runePageIcons(page, { keystoneSize: 34, minorSize: 20, treeSize: 24, shardSize: 16 })}
+// expanded read-only detail: every pick with its name, grouped by tree
+function runePageDetail(page) {
+  const primaryTree = treeByName(page.primary_tree);
+  const secondaryTree = treeByName(page.secondary_tree);
+  const runeItem = (name, tree, size = 18) => name
+    ? `<div class="rune-detail-item">${runeIconImg(name, tree, size)}<span>${escapeHtml(name)}</span></div>` : "";
+  const treeHead = (tree) => tree
+    ? `<h6><img src="${runeIconUrl(tree.icon)}" width="14" height="14" alt="">${escapeHtml(tree.name)}</h6>`
+    : `<h6>–</h6>`;
+  const shardItem = (name, row) => name
+    ? `<div class="rune-detail-item">${shardIconImg(name, row, 14)}<span>${escapeHtml(name)}</span></div>` : "";
+  return `<div class="rune-page-detail">
+    <div class="rune-detail-col">
+      ${treeHead(primaryTree)}
+      ${runeItem(page.keystone, primaryTree, 22)}
+      ${(page.primary_runes || []).map((n) => runeItem(n, primaryTree)).join("")}
+    </div>
+    <div class="rune-detail-col">
+      ${treeHead(secondaryTree)}
+      ${(page.secondary_runes || []).map((n) => runeItem(n, secondaryTree)).join("")}
+    </div>
+    <div class="rune-detail-col">
+      <h6>Shards</h6>
+      ${(page.shards || []).map((n, r) => shardItem(n, r)).join("")}
     </div>
   </div>`;
 }
 
-function runePagesDisplay(runes) {
+function runePageCard(page, i, opp) {
+  const key = `${opp}:${i}`;
+  const open = guideState.openRunePages.has(key);
+  return `<div class="rune-page-card">
+    <div class="rune-page-card-head">
+      <span class="rune-page-title${page.label ? "" : " muted"}">${escapeHtml(page.label || `Page ${i + 1}`)}</span>
+      <button type="button" class="preset seg-toggle rune-page-view-toggle" data-key="${escapeHtml(key)}"
+        aria-expanded="${open}" title="${open ? "Hide" : "Show"} rune details">${open ? "▾" : "▸"}</button>
+    </div>
+    <div class="rune-page-display">${
+      runePageIcons(page, { keystoneSize: 34, minorSize: 20, treeSize: 24, shardSize: 16 })}
+    </div>
+    ${open ? runePageDetail(page) : ""}
+  </div>`;
+}
+
+function runePagesDisplay(runes, opp) {
   if (!runes || !runes.length) return "";
-  return `<div class="rune-pages-display">${runes.map(runePageCard).join("")}</div>`;
+  return `<div class="rune-pages-display">${
+    runes.map((page, i) => runePageCard(page, i, opp)).join("")}</div>`;
 }
 
 // ---------- matchup rows ----------
@@ -434,7 +481,7 @@ function guideRow(m) {
         <span class="muted guide-status"></span>
       </div>`;
   } else if (hasAny) {
-    body = `${runePagesDisplay(runes)}${
+    body = `${runePagesDisplay(runes, champ)}${
       notes ? `<div class="md-body">${renderNotes(notes)}</div>` : ""}`;
   } else {
     body = `<p class="muted">No guide yet —
@@ -569,6 +616,14 @@ function wireGuideHandlers(target) {
     }));
 
   // rune page builder — only present while editing
+  // read-only rune-page detail toggle (no edit mode needed)
+  target.querySelectorAll(".rune-page-view-toggle").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.key;
+      guideState.openRunePages.has(key)
+        ? guideState.openRunePages.delete(key) : guideState.openRunePages.add(key);
+      renderGuide();
+    }));
   target.querySelectorAll(".rune-page-add").forEach((btn) =>
     btn.addEventListener("click", () => {
       guideState.draft.runes.push(emptyRunePage());

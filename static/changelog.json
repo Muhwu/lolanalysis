@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "version": "1.26.0",
+      "date": "2026-07-17",
+      "items": [
+        "Rune pages in the Champ guide expand for viewing (▸ on the page card) — full rune names by tree, no need to open the editor",
+        "Matchups with a guide now always show in the Champ guide list, even against opponents that champion hasn't faced yet (e.g. migrated or imported notes)"
+      ]
+    },
+    {
       "version": "1.25.0",
       "date": "2026-07-17",
       "items": [

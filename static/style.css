@@ -844,7 +844,25 @@ td.rank-cell { font-size: 12px; line-height: 1.5; }
   border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
   min-width: 220px;
 }
-.rune-page-title { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.rune-page-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 4px;
+}
+.rune-page-title { font-size: 12px; font-weight: 600; }
+.rune-page-detail {
+  display: flex; flex-wrap: wrap; gap: 16px;
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--grid);
+}
+.rune-detail-col h6 {
+  display: flex; align-items: center; gap: 5px;
+  margin: 0 0 4px; font-size: 11px; font-weight: 600; color: var(--text-secondary);
+}
+.rune-detail-col h6 img { border-radius: 50%; }
+.rune-detail-item {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; padding: 1px 0;
+}
+.rune-detail-item img { border-radius: 50%; background: var(--surface-1); }
 .rune-page-display { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .rune-page-display img { border-radius: 50%; background: var(--surface-1); }
 .rune-page-minors { display: flex; gap: 2px; }
