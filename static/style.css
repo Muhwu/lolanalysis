@@ -843,7 +843,7 @@ td.rank-cell { font-size: 12px; line-height: 1.5; }
 .rune-tree-btn img { border-radius: 50%; }
 .rune-tree-btn.active { background: var(--accent-wash); border-color: var(--series-1); color: var(--text-primary); }
 .rune-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
-.rune-row-keystone .rune-btn img { width: 32px; height: 32px; }
+.rune-row-keystone .rune-btn img { width: 36px; height: 36px; }
 .rune-btn {
   border: 2px solid transparent; border-radius: 50%; padding: 2px;
   background: var(--surface-1); cursor: pointer; line-height: 0;

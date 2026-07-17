@@ -256,7 +256,7 @@ function treePicker(role, selected, excluded) {
     if (excluded && t.name === excluded) return "";
     return `<button type="button" class="rune-tree-btn ${t.name === selected ? "active" : ""}"
         data-role="${role}-tree" data-tree="${escapeHtml(t.name)}" title="${escapeHtml(t.name)}">
-      <img src="${runeIconUrl(t.icon)}" alt="${escapeHtml(t.name)}" width="28" height="28">
+      <img src="${runeIconUrl(t.icon)}" alt="${escapeHtml(t.name)}" width="32" height="32">
       <span>${escapeHtml(t.name)}</span>
     </button>`;
   }).join("")}</div>`;
@@ -265,7 +265,7 @@ function treePicker(role, selected, excluded) {
 function runeButton(role, row, rune, active) {
   return `<button type="button" class="rune-btn ${active ? "active" : ""}"
       data-role="${role}" data-row="${row}" data-rune="${escapeHtml(rune.name)}" title="${escapeHtml(rune.name)}">
-    <img src="${runeIconUrl(rune.icon)}" alt="${escapeHtml(rune.name)}" width="26" height="26">
+    <img src="${runeIconUrl(rune.icon)}" alt="${escapeHtml(rune.name)}" width="30" height="30">
   </button>`;
 }
 
@@ -293,7 +293,7 @@ function shardsPicker(page) {
   return SHARD_ROWS.map((row, i) => `<div class="rune-row">${
     row.shards.map((s) => `<button type="button" class="rune-btn shard-btn ${page.shards[i] === s.name ? "active" : ""}"
         data-role="shard" data-row="${i}" data-shard="${escapeHtml(s.name)}" title="${escapeHtml(s.name)}">
-      <img src="${shardIconUrl(s.icon)}" alt="${escapeHtml(s.name)}" width="20" height="20">
+      <img src="${shardIconUrl(s.icon)}" alt="${escapeHtml(s.name)}" width="24" height="24">
     </button>`).join("")}</div>`).join("");
 }
 
