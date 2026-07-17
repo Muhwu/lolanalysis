@@ -1,6 +1,15 @@
 {
   "entries": [
     {
+      "version": "1.26.1",
+      "date": "2026-07-17",
+      "items": [
+        "Fixed partially-filled rune pages silently failing to save (unfilled slots were rejected by validation with a near-invisible error)",
+        "Save failures in the Champ guide now show a clear red error message",
+        "Switching champion or collapsing a matchup mid-edit now asks before discarding unsaved changes"
+      ]
+    },
+    {
       "version": "1.26.0",
       "date": "2026-07-17",
       "items": [

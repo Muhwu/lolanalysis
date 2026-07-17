@@ -802,6 +802,22 @@ def test_champ_guide_import_encrypted_requires_correct_password(client):
     assert client.get("/api/matchups/notes?my_champion=Camille").json()["Darius"]["runes"] == [CONQ_PAGE]
 
 
+def test_rune_page_with_empty_slots_saves(client):
+    # the picker sends "" placeholders for unfilled slots — a half-built
+    # page must save, not 400 (regression: "not a rune: " on every partial page)
+    partial = {"label": "", "primary_tree": "Precision", "keystone": "Conqueror",
+               "primary_runes": ["Triumph", "", ""], "secondary_tree": "",
+               "secondary_runes": [], "shards": ["", "", ""]}
+    r = client.put("/api/matchups/notes/Gwen/Darius", json={"runes": [partial]})
+    assert r.status_code == 200
+    assert client.get("/api/matchups/notes?my_champion=Gwen").json()["Darius"]["runes"] == [partial]
+    # real bad names still rejected
+    assert client.put("/api/matchups/notes/Gwen/Darius", json={
+        "runes": [{**partial, "primary_runes": ["Fake Rune", "", ""]}]}).status_code == 400
+    assert client.put("/api/matchups/notes/Gwen/Darius", json={
+        "runes": [{**partial, "shards": ["Fake Shard", "", ""]}]}).status_code == 400
+
+
 def test_champ_guide_import_rejects_non_export_file(client):
     assert client.post("/api/matchups/notes/import",
                        json={"data": {"not": "an export"}}).status_code == 400

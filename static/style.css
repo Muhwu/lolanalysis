@@ -777,6 +777,7 @@ td.rank-cell { font-size: 12px; line-height: 1.5; }
   background: none; border: none; padding: 0; font: inherit;
   color: var(--series-1); text-decoration: underline; cursor: pointer;
 }
+.status-error { color: var(--critical) !important; font-weight: 600; }
 .guide-row-grid {
   display: grid; grid-template-columns: minmax(280px, 1fr) minmax(260px, 340px);
   gap: 20px; align-items: start; margin-top: 8px;

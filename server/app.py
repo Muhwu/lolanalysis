@@ -593,12 +593,14 @@ def _validate_rune_page(page):
     keystone = page.get("keystone")
     if keystone and RUNE_NAMES and keystone not in RUNE_NAMES:
         raise HTTPException(400, f"not a rune: {keystone}")
+    # empty strings are unfilled slots (the picker sends positional arrays,
+    # e.g. primary_runes ["Triumph", "", ""]) — a partial page is saveable
     for key in ("primary_runes", "secondary_runes"):
         for value in page.get(key) or []:
-            if RUNE_NAMES and value not in RUNE_NAMES:
+            if value and RUNE_NAMES and value not in RUNE_NAMES:
                 raise HTTPException(400, f"not a rune: {value}")
     for value in page.get("shards") or []:
-        if RUNE_SHARD_NAMES and value not in RUNE_SHARD_NAMES:
+        if value and RUNE_SHARD_NAMES and value not in RUNE_SHARD_NAMES:
             raise HTTPException(400, f"not a stat shard: {value}")
 
 

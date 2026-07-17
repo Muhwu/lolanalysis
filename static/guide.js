@@ -83,6 +83,11 @@ async function initGuide() {
   if (!guideState.wired) {
     guideState.wired = true;
     $("#guide-champion").addEventListener("change", (e) => {
+      if (guideState.editing
+          && !confirm("You have an unsaved guide edit — discard it?")) {
+        e.target.value = guideState.myChampion; // stay put
+        return;
+      }
       guideState.myChampion = e.target.value;
       guideState.editing = null;
       guideState.editingGeneral = false;
@@ -561,6 +566,8 @@ function wireGuideHandlers(target) {
     btn.addEventListener("click", async () => {
       const champ = btn.dataset.opp;
       if (guideState.expanded.has(champ)) {
+        if (guideState.editing === champ
+            && !confirm("You have an unsaved guide edit — discard it?")) return;
         guideState.expanded.delete(champ);
         if (guideState.editing === champ) guideState.editing = null;
         renderGuide();
@@ -601,8 +608,9 @@ function wireGuideHandlers(target) {
         });
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
-        btn.parentElement.querySelector(".guide-status").textContent =
-          body.detail || `error ${response.status}`;
+        const status = btn.parentElement.querySelector(".guide-status");
+        status.classList.add("status-error");
+        status.textContent = `Save failed — ${body.detail || `error ${response.status}`}`;
         return;
       }
       const hasAny = payload.notes.trim() || payload.runes.length || payload.patch_version.trim();
