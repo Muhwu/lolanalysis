@@ -497,6 +497,9 @@ td.notes-cell { text-align: left; white-space: normal; }
   font-weight: 600;
   white-space: nowrap;
 }
+.chip[draggable="true"] { cursor: grab; }
+.chip.dragging { opacity: 0.4; }
+.chip.drag-over { outline: 2px dashed var(--series-1); outline-offset: 1px; }
 .chip-main { background: color-mix(in srgb, var(--series-1) 13%, transparent); border: 1px solid var(--series-1); }
 .chip-core { background: rgba(27, 175, 122, 0.13); border: 1px solid #1baf7a; }
 .chip-counter { background: rgba(237, 161, 0, 0.16); border: 1px solid #c98500; }

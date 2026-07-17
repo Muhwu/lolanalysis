@@ -137,11 +137,51 @@ function champDisplay(id) {
 
 function poolChip(role, champ, removable) {
   const def = POOL_ROLES[role];
-  return `<span class="chip ${def.cls}" title="${def.label}">
+  return `<span class="chip ${def.cls}" title="${def.label}${removable ? " — drag to reorder" : ""}"
+      ${removable ? `draggable="true"` : ""} data-role="${role}" data-champ="${escapeHtml(champ)}">
     ${def.glyph ? def.glyph + " " : ""}${escapeHtml(champDisplay(champ))}${removable
       ? `<button class="chip-x" data-role="${role}" data-champ="${escapeHtml(champ)}"
            title="Remove" aria-label="Remove ${escapeHtml(champDisplay(champ))}">×</button>` : ""}
   </span>`;
+}
+
+// chip being dragged within a pool box — order matters (first = highest
+// priority, e.g. an OTP's main followed by counters in preference order)
+let poolDragChip = null;
+
+function wirePoolChipDrag(box) {
+  box.querySelectorAll(".chip").forEach((chip) => {
+    chip.addEventListener("dragstart", (e) => {
+      poolDragChip = { role: chip.dataset.role, champ: chip.dataset.champ };
+      chip.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", chip.dataset.champ); // Firefox needs data set
+    });
+    chip.addEventListener("dragend", () => {
+      poolDragChip = null;
+      chip.classList.remove("dragging");
+    });
+    chip.addEventListener("dragover", (e) => {
+      if (!poolDragChip || poolDragChip.role !== chip.dataset.role
+          || poolDragChip.champ === chip.dataset.champ) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      chip.classList.add("drag-over");
+    });
+    chip.addEventListener("dragleave", () => chip.classList.remove("drag-over"));
+    chip.addEventListener("drop", (e) => {
+      e.preventDefault();
+      chip.classList.remove("drag-over");
+      if (!poolDragChip || poolDragChip.role !== chip.dataset.role) return;
+      const list = blockState.pool[chip.dataset.role];
+      const from = list.indexOf(poolDragChip.champ);
+      const to = list.indexOf(chip.dataset.champ);
+      if (from < 0 || to < 0 || from === to) return;
+      list.splice(from, 1);
+      list.splice(to, 0, poolDragChip.champ); // right→after target, left→before
+      renderPoolEditor();
+    });
+  });
 }
 
 function renderPoolEditor() {
@@ -156,6 +196,7 @@ function renderPoolEditor() {
         blockState.pool[role] = blockState.pool[role].filter((c) => c !== btn.dataset.champ);
         renderPoolEditor();
       }));
+    wirePoolChipDrag(box);
   });
 }
 
@@ -220,6 +261,7 @@ async function savePool() {
   });
   $("#pool-status").textContent = response.ok ? "saved" : "save failed";
   setTimeout(() => { $("#pool-status").textContent = ""; }, 2000);
+  if (response.ok) state.poolOrder = null; // champion dropdowns regroup on next build
   loadBlocks(); // a just-completed block may have been stamped with this pool
 }
 

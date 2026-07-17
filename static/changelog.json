@@ -1,6 +1,13 @@
 {
   "entries": [
     {
+      "version": "1.28.0",
+      "date": "2026-07-17",
+      "items": [
+        "Champion pool chips can be drag'n'drop reordered — order is the pool's priority (main first, counters in preference order) and is used wherever the pool appears"
+      ]
+    },
+    {
       "version": "1.27.0",
       "date": "2026-07-17",
       "items": [
