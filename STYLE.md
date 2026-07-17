@@ -86,6 +86,23 @@ Body is 14px. Reuse these instead of inventing sizes:
   on `input` so unrelated re-renders don't wipe typed text (see
   `#guide-notes` wiring in guide.js).
 
+## Modal dialogs
+
+One shared shell: `#modal-overlay` (fixed, dimmed, click-outside closes,
+Esc closes) wrapping `#modal-box`. A feature renders its content into
+`#modal-box` and re-wires its own handlers (see cooldowns.js). The box uses
+`var(--surface-1-solid)` deliberately — a dialog over a dimmed page should
+not inherit the translucency setting. Head pattern: `.modal-head` with an
+`h3` and an `icon-btn` ✕.
+
+## Drag-to-reorder
+
+Ordered chip lists (champion pool, skill priority) use native HTML5 DnD:
+`draggable="true"`, `.dragging` (lowered opacity) on the source,
+`.drag-over` (dashed `--series-1` outline) on the target, splice-reorder on
+drop, `cursor: grab`. Always call `e.dataTransfer.setData` in dragstart
+(Firefox refuses to drag otherwise) and re-render after drop.
+
 ## Layout
 
 - Page is a single centered column, `max-width: 1080px`; views are `<div

@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "version": "1.30.0",
+      "date": "2026-07-17",
+      "items": [
+        "Cooldown comparison popup (⏱ on a Matchups row) — your ability cooldowns side by side with the opponent's, with haste sources (items/runes/buffs granting ability haste or ultimate haste) reducing the shown values next to base",
+        "Each side has a champion level slider and a drag-to-reorder skill priority (R at 6/11/16) so cooldowns reflect actual ranks at that level — skill order is remembered per champion"
+      ]
+    },
+    {
       "version": "1.29.0",
       "date": "2026-07-17",
       "items": [

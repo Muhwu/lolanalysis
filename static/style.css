@@ -948,6 +948,63 @@ td.rank-cell { font-size: 12px; line-height: 1.5; }
 }
 footer { margin-top: 36px; border-top: 1px solid var(--grid); padding-top: 10px; }
 
+/* ---------- modal ---------- */
+#modal-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 40px 16px; overflow-y: auto;
+}
+#modal-overlay.hidden { display: none; }
+#modal-box {
+  /* deliberately the solid surface: a dialog over a dimmed page should not
+     inherit the translucency setting */
+  background: var(--surface-1-solid);
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 16px 18px; max-width: 940px; width: 100%;
+}
+.modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.modal-head h3 { margin: 0; font-size: 16px; }
+
+/* ---------- cooldown comparison ---------- */
+.cd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+@media (max-width: 760px) { .cd-grid { grid-template-columns: 1fr; } }
+.cd-side-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
+.cd-side-head img { width: 28px; height: 28px; border-radius: 5px; }
+.cd-side-head select { flex: 1; max-width: 230px; }
+.cd-control-row {
+  display: flex; align-items: center; gap: 8px; margin: 6px 0;
+  font-size: 13px; flex-wrap: wrap;
+}
+.cd-control-row input[type="range"] { flex: 1; max-width: 180px; }
+.cd-order { display: flex; gap: 4px; }
+.cd-order-chip { cursor: grab; user-select: none; }
+.cd-haste { margin: 8px 0 4px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.cd-haste-row, .cd-haste-head {
+  display: grid; grid-template-columns: 1fr 62px 62px 32px;
+  gap: 6px; width: 100%; align-items: center;
+}
+.cd-haste-head { font-size: 11px; }
+.cd-haste-row input {
+  font: inherit; font-size: 12px; padding: 3px 6px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--page); color: var(--text-primary);
+}
+.cd-haste-add { font-size: 12px; }
+.cd-spells {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-top: 10px; border-top: 1px solid var(--grid); padding-top: 10px;
+}
+.cd-spell { display: flex; align-items: center; gap: 10px; }
+.cd-spell img { border-radius: 6px; }
+.cd-spell-main { flex: 1; min-width: 0; }
+.cd-spell-name { font-size: 13px; }
+.cd-spell-ranks { font-size: 11px; }
+.cd-spell-ranks .cd-current { color: var(--text-primary); font-weight: 700; }
+.cd-spell-value { font-size: 14px; white-space: nowrap; }
+.cd-base { text-decoration: line-through; }
+.mu-cd-link { font-size: 14px; }
+
 /* ---------- clips (coaching sessions + block games) ---------- */
 .clips-section { margin-top: 14px; max-width: 520px; }
 .clips-section h5 { margin: 0 0 6px; font-size: 12px; color: var(--text-secondary); }
