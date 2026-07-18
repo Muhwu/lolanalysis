@@ -571,6 +571,8 @@ function guideRow(m) {
       <h4>${champIcon(champ)}${displayName(champ)}</h4>
       ${patchBadge}
       ${statLine}
+      <button class="preset icon-btn guide-op-link" data-opp="${escapeHtml(champ)}"
+        title="One Pager — full-screen quick reference" aria-label="One Pager">📄</button>
       <button class="preset icon-btn guide-cd-link" data-opp="${escapeHtml(champ)}"
         title="Compare ability cooldowns" aria-label="Compare ability cooldowns">⏱</button>
       ${editing || !hasAny ? "" : `<button class="preset icon-btn guide-edit" data-opp="${escapeHtml(champ)}"
@@ -700,6 +702,8 @@ function wireGuideHandlers(target) {
   target.querySelectorAll(".guide-cd-link").forEach((btn) =>
     btn.addEventListener("click", () =>
       openCooldowns(guideState.myChampion, btn.dataset.opp))); // cooldowns.js
+  target.querySelectorAll(".guide-op-link").forEach((btn) =>
+    btn.addEventListener("click", () => openOnePager(btn.dataset.opp)));
   target.querySelectorAll(".guide-build-clear").forEach((btn) =>
     btn.addEventListener("click", async () => {
       const opp = btn.dataset.opp;
@@ -1189,3 +1193,63 @@ function wireExportImport() {
     }
   });
 }
+
+// ---------- One Pager (second-screen quick reference) ----------
+
+// Full-screen, distraction-free summary of ONE matchup: runes, skill order,
+// item build, matchup notes, general champion notes. Deliberately no
+// history/stats — it's meant to sit on a second screen during a game.
+function openOnePager(opp) {
+  const my = guideState.myChampion;
+  const { notes, runes, patch_version, skill_order } = guideFor(opp);
+  const build = guideState.itemBuild || { core: [], situational: [] };
+  const sections = [];
+  if (runes && runes.length) {
+    sections.push(`<section><h3>Runes</h3><div class="op-runes">${
+      runes.map((page, i) => `<div class="op-rune-page">
+        <div class="rune-page-title${page.label ? "" : " muted"}">${escapeHtml(page.label || `Page ${i + 1}`)}</div>
+        <div class="rune-page-display">${
+          runePageIcons(page, { keystoneSize: 44, minorSize: 28, treeSize: 32, shardSize: 20 })}</div>
+      </div>`).join("")}</div></section>`);
+  }
+  if (skill_order && skill_order.some(Boolean)) {
+    sections.push(`<section><h3>Skill order</h3>
+      <div class="op-skill">${skillGridMini(skill_order)}</div></section>`);
+  }
+  const buildSections = [
+    itemBuildSectionView("Core build", build.core || []),
+    ...(build.situational || []).map((s) => itemBuildSectionView(s.label || "Situational", s.items || [])),
+  ].join("");
+  if (buildSections) sections.push(`<section><h3>Item build</h3>${buildSections}</section>`);
+  if (notes) {
+    sections.push(`<section><h3>How to play vs ${escapeHtml(displayName(opp))}</h3>
+      <div class="md-body">${renderNotes(notes)}</div></section>`);
+  }
+  if (guideState.generalNotes) {
+    sections.push(`<section><h3>General ${escapeHtml(displayName(my))} notes</h3>
+      <div class="md-body">${renderNotes(guideState.generalNotes)}</div></section>`);
+  }
+  $("#onepager-body").innerHTML = `
+    <div class="op-head">
+      <div class="op-title">
+        ${champIcon(my)}<strong>${escapeHtml(displayName(my))}</strong>
+        <span class="muted">vs</span>
+        ${champIcon(opp)}<strong>${escapeHtml(displayName(opp))}</strong>
+        ${patch_version ? `<span class="guide-patch-badge">Patch ${escapeHtml(patch_version)}</span>` : ""}
+      </div>
+      <button type="button" class="preset icon-btn" id="onepager-close"
+        title="Close (Esc)" aria-label="Close">✕</button>
+    </div>
+    ${sections.join("") || `<p class="muted">Nothing recorded for this matchup yet —
+      add runes, a build, or notes in the Matchup guide first.</p>`}`;
+  $("#onepager-overlay").classList.remove("hidden");
+  $("#onepager-close").addEventListener("click", closeOnePager);
+}
+
+function closeOnePager() {
+  $("#onepager-overlay").classList.add("hidden");
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("#onepager-overlay").classList.contains("hidden")) closeOnePager();
+});

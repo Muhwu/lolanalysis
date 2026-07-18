@@ -179,6 +179,11 @@ change, not a crawler change.
   notes] / Games tabs; a 📖 link per row — shown only when a specific "My
   champion" filter is active, since guides are scoped per champion pair —
   deep-links to that matchup's Matchup guide) in `matchups.js`;
+  a 📄 button per Matchup-guide row opens the One Pager
+  (`openOnePager` in guide.js, `#onepager-overlay` full-screen opaque
+  overlay): a second-screen quick reference for one matchup — runes, skill
+  order, item build, matchup + general notes; deliberately NO history/
+  stats. Esc/✕ closes.
   a ⏱ button per matchup row (also on Matchup-guide rows) opens the
   cooldown-comparison modal (`cooldowns.js`: generic
   `#modal-overlay`/`#modal-box` shell in index.html; spell data fetched

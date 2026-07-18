@@ -1,6 +1,13 @@
 {
   "entries": [
     {
+      "version": "1.37.0",
+      "date": "2026-07-18",
+      "items": [
+        "One Pager (📄 on a Matchup guide row) — a full-screen, distraction-free quick reference for one matchup: runes, skill order, item build, and your notes. Made for a second screen during a game; Esc closes it"
+      ]
+    },
+    {
       "version": "1.36.0",
       "date": "2026-07-18",
       "items": [

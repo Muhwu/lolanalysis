@@ -806,6 +806,35 @@ td.rank-cell { font-size: 12px; line-height: 1.5; }
 .research-screenshot img { max-width: 100%; border-radius: 4px; display: block; }
 .research-screenshot .chip-x { position: absolute; top: 2px; right: 4px; background: var(--surface-1); }
 
+/* ---------- one pager (second-screen quick reference) ---------- */
+#onepager-overlay {
+  position: fixed; inset: 0; z-index: 120;
+  /* opaque on purpose: it replaces the UI for at-a-glance reading */
+  background: var(--page-solid);
+  overflow-y: auto;
+  padding: 28px 24px 48px;
+}
+#onepager-body { max-width: 860px; margin: 0 auto; }
+.op-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--grid);
+}
+.op-title { display: flex; align-items: center; gap: 10px; font-size: 20px; }
+.op-title img { width: 36px; height: 36px; border-radius: 6px; }
+#onepager-body section { margin-top: 24px; }
+#onepager-body h3 {
+  margin: 0 0 10px; font-size: 13px; font-weight: 700;
+  color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;
+}
+#onepager-body .md-body { max-width: none; font-size: 15px; }
+.op-runes { display: flex; gap: 28px; flex-wrap: wrap; }
+.op-rune-page .rune-page-title { font-size: 13px; margin-bottom: 6px; }
+.op-rune-page .rune-page-display img { background: var(--surface-1-solid); }
+.op-skill .skill-grid-mini .sg-row { grid-template-columns: 20px repeat(18, 24px); gap: 2px; }
+.op-skill .skill-grid-mini .sg-cell { width: 24px; height: 24px; border-radius: 4px; }
+.op-skill .skill-grid-mini .sg-label { font-size: 12px; }
+#onepager-body .item-chip img { width: 32px; height: 32px; }
+
 /* ---------- matchup guide view ---------- */
 #guide-champion-icon img { width: 24px; height: 24px; border-radius: 5px; display: block; }
 .mu-guide-link { font-size: 14px; }
