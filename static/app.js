@@ -1170,6 +1170,46 @@ async function initSettings() {
   settingsUi.wired = true;
   $("#pool-save").addEventListener("click", savePool); // blocks.js
   wireChipBoxes(); // blocks.js — chip add/remove/drag inside #pool-card
+  $("#import-all-btn").addEventListener("click", async () => {
+    const status = $("#import-all-status");
+    const file = $("#import-all-file").files[0];
+    if (!file) { status.textContent = "choose a .zip file first"; return; }
+    status.textContent = "checking…";
+    const previewData = new FormData();
+    previewData.append("file", file);
+    const preview = await fetch("/api/import-all/preview", { method: "POST", body: previewData });
+    const previewBody = await preview.json().catch(() => ({}));
+    if (!preview.ok) {
+      status.textContent = previewBody.detail || `error ${preview.status}`;
+      return;
+    }
+    if (previewBody.conflicts.length) {
+      status.textContent = `Can't import — would overwrite: ${previewBody.conflicts.slice(0, 5).join(", ")}` +
+        `${previewBody.conflicts.length > 5 ? "…" : ""}`;
+      return;
+    }
+    const c = previewBody.counts;
+    const summary = [
+      c.sessions && `${c.sessions} session(s)`, c.blocks && `${c.blocks} block(s)`,
+      c.matchup_notes && `${c.matchup_notes} matchup guide(s)`,
+      c.champion_notes && `${c.champion_notes} champion note(s)`,
+      c.item_builds && `${c.item_builds} item build(s)`,
+      c.research_entries && `${c.research_entries} research entr(y/ies)`,
+      c.clips && `${c.clips} clip(s)`,
+    ].filter(Boolean).join(", ");
+    if (!confirm(`Import ${summary || "this backup"}?`)) { status.textContent = "cancelled"; return; }
+    status.textContent = "importing…";
+    const importData = new FormData();
+    importData.append("file", file);
+    const response = await fetch("/api/import-all", { method: "POST", body: importData });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      status.textContent = body.detail || `error ${response.status}`;
+      return;
+    }
+    status.textContent = "imported ✓ — reloading…";
+    setTimeout(() => location.reload(), 1000);
+  });
   $("#setting-accent-color").addEventListener("input", (e) => {
     document.documentElement.style.setProperty("--series-1", e.target.value);
     $("#setting-accent-reset").classList.remove("hidden");

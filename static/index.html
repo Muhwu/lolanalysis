@@ -244,6 +244,26 @@
       </div>
     </div>
 
+    <h3 class="settings-group-head">Backup</h3>
+    <div class="settings-field">
+      <a class="preset" href="/api/export-all" download>Export everything (.zip)</a>
+      <p class="muted">Every coaching session, block learning, matchup guide, champion
+        note, item build, and Research entry you've written — plus every uploaded
+        clip and screenshot — as one .zip file. Doesn't include your API key/accounts
+        or crawled match history (Riot's API can always re-supply that).</p>
+    </div>
+    <div class="settings-field">
+      <label class="filter-label" for="import-all-file">Import from a backup</label>
+      <div class="import-all-row">
+        <input type="file" id="import-all-file" accept=".zip,application/zip">
+        <button id="import-all-btn" class="preset" type="button">Import</button>
+      </div>
+      <span id="import-all-status" class="muted"></span>
+      <p class="muted">Restore an "Export everything" .zip — only meant for a fresh/empty
+        setup (new machine, reinstall). Refuses (nothing is written) if anything in the
+        backup would collide with data already here.</p>
+    </div>
+
     <div class="settings-savebar">
       <button id="settings-save" class="btn-primary">Save settings</button>
       <span id="settings-status" class="muted"></span>

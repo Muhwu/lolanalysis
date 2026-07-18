@@ -397,6 +397,32 @@ division of responsibility as sessions/blocks. UI in `research.js`:
 collapsed-by-default entry cards (list is lightweight — `GET /api/research`
 returns only the entry rows; screenshots are fetched together with the
 rest of the entry on first expand via `GET /api/research/{id}`).
+`GET /api/export-all` — a full backup as one .zip (`api_export_all` in
+app.py): `data.json` (sessions, blocks + block_games, matchup_notes,
+champion_notes, champion_item_builds, research_entries +
+research_screenshots, clips — JSON text columns decoded back to real JSON
+for readability) plus every `kind='upload'` clip and screenshot file under
+`clips/`/`screenshots/`. Deliberately excludes `settings` (API key,
+accounts) and crawled match/rank data — Riot's API can always re-supply
+the latter, and the former shouldn't leave the machine in a shareable
+backup. Built to a temp file via `zipfile` (not in-memory — clips can be
+up to 50 MB each) and streamed back via `FileResponse` with a
+`BackgroundTask` cleanup once sent. Settings → Backup has a plain
+`<a href download>` link (no JS needed, same pattern as the sessions
+Markdown export). `POST /api/import-all/preview` + `POST /api/import-all`
+restore one — scoped deliberately to a fresh/empty setup only (new
+machine, reinstall), not merging into an already-used database: every row
+keeps its original id/PK from the backup, and `_import_conflicts` checks
+each one against what's already present *before* writing anything — if
+even a single row would collide (matching id, PK, session date, etc.), the
+whole import is refused with a 409 listing what conflicts, nothing
+partially written. No id remapping is attempted; that's the tradeoff for
+keeping this simple, matching the "fresh setup" scope the feature was
+built for. Preview returns the same conflict list plus per-table counts,
+which the UI uses for a `confirm()` before actually committing. Uploaded
+as multipart (`UploadFile`, 500 MB cap — a backup can hold many clips),
+re-uploaded a second time for the real import call rather than caching
+the file server-side between preview and commit (stateless, simplest).
 
 ## Development rules
 

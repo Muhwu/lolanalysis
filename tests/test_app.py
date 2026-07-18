@@ -1312,3 +1312,143 @@ def test_deleting_research_entry_cleans_up_screenshots(client):
                        files={"file": ("shot.png", b"bytes", "image/png")}).json()[0]
     assert client.delete(f"/api/research/{entry_id}").status_code == 200
     assert client.get(shot["file_url"]).status_code == 404
+
+
+# ---------- export everything ----------
+
+def test_export_all_bundles_content_and_files(client):
+    import io
+    import zipfile
+
+    session_id = _make_session(client)
+    client.put("/api/champions/notes/Gwen", json={"notes": "general Gwen tips"})
+    client.put("/api/matchups/notes/Gwen/Darius", json={"notes": "respect level 2"})
+    client.put("/api/champions/item-build/Gwen", json={
+        "core": ["Riftmaker"], "situational": []})
+    entry_id = client.post("/api/research", json={"player_name": "Faker"}).json()["id"]
+    client.post(f"/api/research/{entry_id}/screenshots",
+               files={"file": ("shot.png", b"fake png bytes", "image/png")})
+    client.post("/api/clips", data={"owner_type": "session", "owner_id": session_id, "label": "x"},
+               files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")})
+
+    r = client.get("/api/export-all")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/zip"
+    assert "coach-potato-export-" in r.headers["content-disposition"]
+
+    zf = zipfile.ZipFile(io.BytesIO(r.content))
+    names = zf.namelist()
+    assert "data.json" in names
+    assert any(n.startswith("screenshots/") for n in names)
+    assert any(n.startswith("clips/") for n in names)
+
+    import json as json_module
+    data = json_module.loads(zf.read("data.json"))
+    assert data["kind"] == "full-export"
+    assert len(data["sessions"]) == 1
+    assert data["champion_notes"][0]["notes"] == "general Gwen tips"
+    assert data["matchup_notes"][0]["notes"] == "respect level 2"
+    assert data["item_builds"][0]["core"] == ["Riftmaker"]
+    assert data["research_entries"][0]["player_name"] == "Faker"
+    assert len(data["research_screenshots"]) == 1
+    assert len(data["clips"]) == 1
+    assert "riot_api_key" not in json_module.dumps(data)  # no credentials in the backup
+
+
+# ---------- import everything ----------
+
+def test_import_all_round_trip_and_conflict_detection(client):
+    import io
+    import os
+    import zipfile
+
+    session_id = _make_session(client)
+    client.put("/api/champions/notes/Gwen", json={"notes": "general Gwen tips"})
+    client.put("/api/matchups/notes/Gwen/Darius", json={"notes": "respect level 2"})
+    saved_order = ["Q", "W", "E", "Q", "Q", "R"] + [""] * 12
+    client.put("/api/matchups/notes/Gwen/Darius", json={"skill_order": saved_order})
+    client.put("/api/champions/item-build/Gwen", json={"core": ["Riftmaker"], "situational": []})
+    entry_id = client.post("/api/research", json={"player_name": "Faker"}).json()["id"]
+    client.post(f"/api/research/{entry_id}/screenshots",
+               files={"file": ("shot.png", b"fake png bytes", "image/png")})
+    client.post("/api/clips", data={"owner_type": "session", "owner_id": session_id, "label": "x"},
+               files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")})
+
+    export_bytes = client.get("/api/export-all").content
+
+    # importing the same backup back into the same (still-populated) db must
+    # detect every conflict and refuse to write anything
+    preview = client.post("/api/import-all/preview",
+                          files={"file": ("backup.zip", export_bytes, "application/zip")}).json()
+    assert preview["counts"]["sessions"] == 1
+    assert len(preview["conflicts"]) > 0
+    result = client.post("/api/import-all",
+                         files={"file": ("backup.zip", export_bytes, "application/zip")})
+    assert result.status_code == 409
+
+    # wipe the tables the backup covers to simulate a fresh/empty setup,
+    # then the same backup should import cleanly
+    conn = db.connect(os.environ["LOL_DB_PATH"])
+    for table in ("coaching_sessions", "blocks", "block_games", "matchup_notes",
+                  "champion_notes", "champion_item_builds", "research_entries",
+                  "research_screenshots", "clips"):
+        conn.execute(f"DELETE FROM {table}")
+    conn.commit()
+    conn.close()
+
+    preview2 = client.post("/api/import-all/preview",
+                           files={"file": ("backup.zip", export_bytes, "application/zip")}).json()
+    assert preview2["conflicts"] == []
+
+    result2 = client.post("/api/import-all",
+                          files={"file": ("backup.zip", export_bytes, "application/zip")})
+    assert result2.status_code == 200
+    assert result2.json()["imported"]["sessions"] == 1
+
+    assert client.get("/api/champions/notes/Gwen").json()["notes"] == "general Gwen tips"
+    restored = client.get("/api/matchups/notes?my_champion=Gwen").json()["Darius"]
+    assert restored["notes"] == "respect level 2"
+    assert restored["skill_order"] == saved_order  # saved builds survive backups
+    assert client.get("/api/champions/item-build/Gwen").json()["core"] == ["Riftmaker"]
+    research = client.get("/api/research").json()
+    assert research[0]["player_name"] == "Faker"
+    entry = client.get(f"/api/research/{research[0]['id']}").json()
+    assert len(entry["screenshots"]) == 1
+    assert client.get(entry["screenshots"][0]["file_url"]).content == b"fake png bytes"
+    clips = client.get(f"/api/clips?owner_type=session&owner_id={session_id}").json()
+    assert len(clips) == 1
+    assert client.get(clips[0]["play_url"]).content == b"fake video bytes"
+
+
+def test_export_all_covers_every_matchup_notes_column(client):
+    """Column-drift guard: a new matchup_notes column must be carried by the
+    backup (add it to export-all + import-all) or this fails. Regression:
+    PR #5 predated skill_order and would have silently dropped saved builds."""
+    import io
+    import os
+    import zipfile
+
+    import json as json_module
+
+    client.put("/api/matchups/notes/Gwen/Darius", json={"notes": "x"})
+    conn = db.connect(os.environ["LOL_DB_PATH"])
+    columns = {r["name"] for r in conn.execute("PRAGMA table_info(matchup_notes)")}
+    conn.close()
+    zf = zipfile.ZipFile(io.BytesIO(client.get("/api/export-all").content))
+    exported = json_module.loads(zf.read("data.json"))["matchup_notes"][0].keys()
+    assert columns <= set(exported)
+
+
+def test_import_all_rejects_bad_files(client):
+    import io
+    import zipfile
+
+    assert client.post("/api/import-all/preview",
+                       files={"file": ("x.zip", b"not a zip", "application/zip")}
+                       ).status_code == 400
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("data.json", '{"kind": "champ-guide-export"}')
+    assert client.post("/api/import-all/preview",
+                       files={"file": ("x.zip", buf.getvalue(), "application/zip")}
+                       ).status_code == 400

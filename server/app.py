@@ -1,17 +1,21 @@
 """FastAPI app: JSON API over the sqlite db + static frontend."""
+import io
 import json
 import os
 import re
 import sqlite3
+import tempfile
 import threading
 import time
 import uuid
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 
 from . import config, crypto, db, pdf_export, rune_data, stats
 from .config import PROJECT_ROOT
@@ -459,6 +463,270 @@ def api_export_sessions():
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": 'attachment; filename="coaching-sessions.md"'},
     )
+
+
+@app.get("/api/export-all")
+def api_export_all():
+    """A full backup of everything you've authored — coaching sessions,
+    block learnings/notes, matchup guides, champion notes, item builds,
+    Research entries — plus every uploaded clip and screenshot file, as one
+    .zip. Deliberately excludes settings (API key, accounts) and raw
+    crawled match/rank data, which Riot's API can always re-supply."""
+    conn = get_conn()
+    try:
+        sessions = [dict(r) for r in conn.execute(
+            """SELECT session_date, title, notes, start_ranks, created_at_ms
+               FROM coaching_sessions ORDER BY session_date""")]
+        blocks_rows = [dict(r) for r in conn.execute(
+            """SELECT id, title, learnings, pool_snapshot, start_ranks, end_ranks,
+                      closed_at_ms, created_at_ms FROM blocks ORDER BY id""")]
+        block_games_rows = [dict(r) for r in conn.execute(
+            """SELECT id, block_id, match_id, puuid, notes, added_at_ms
+               FROM block_games ORDER BY id""")]
+        matchup_notes_rows = [dict(r) for r in conn.execute(
+            """SELECT my_champion, opp_champion, notes, runes, patch_version,
+                      skill_order, updated_at_ms
+               FROM matchup_notes
+               WHERE notes != '' OR runes != '' OR patch_version != '' OR skill_order != ''
+               ORDER BY my_champion, opp_champion""")]
+        champion_notes_rows = [dict(r) for r in conn.execute(
+            "SELECT champion, notes, updated_at_ms FROM champion_notes ORDER BY champion")]
+        item_build_rows = [dict(r) for r in conn.execute(
+            """SELECT champion, core, situational, updated_at_ms
+               FROM champion_item_builds ORDER BY champion""")]
+        research_rows = [dict(r) for r in conn.execute(
+            """SELECT id, player_name, champion, opp_champion, title, notes,
+                      created_at_ms, updated_at_ms FROM research_entries ORDER BY id""")]
+        screenshot_rows = [dict(r) for r in conn.execute(
+            """SELECT id, entry_id, caption, file_name, created_at_ms
+               FROM research_screenshots ORDER BY id""")]
+        clip_rows = [dict(r) for r in conn.execute(
+            """SELECT id, owner_type, owner_id, label, kind, file_name, url, created_at_ms
+               FROM clips ORDER BY id""")]
+    finally:
+        conn.close()
+
+    for row in matchup_notes_rows:
+        row["runes"] = json.loads(row["runes"]) if row["runes"] else []
+        row["skill_order"] = json.loads(row["skill_order"]) if row["skill_order"] else []
+    for row in item_build_rows:
+        row["core"] = json.loads(row["core"])
+        row["situational"] = json.loads(row["situational"])
+    for row in blocks_rows:
+        for key in ("pool_snapshot", "start_ranks", "end_ranks"):
+            row[key] = json.loads(row[key]) if row[key] else None
+    for row in sessions:
+        row["start_ranks"] = json.loads(row["start_ranks"]) if row["start_ranks"] else None
+
+    payload = {
+        "app": "coach-potato", "kind": "full-export", "version": 1,
+        "exported_at_ms": int(time.time() * 1000),
+        "sessions": sessions,
+        "blocks": blocks_rows,
+        "block_games": block_games_rows,
+        "matchup_notes": matchup_notes_rows,
+        "champion_notes": champion_notes_rows,
+        "item_builds": item_build_rows,
+        "research_entries": research_rows,
+        "research_screenshots": screenshot_rows,
+        "clips": clip_rows,
+    }
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    tmp.close()
+    with zipfile.ZipFile(tmp.name, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("data.json", json.dumps(payload, indent=2))
+        clips_dir = get_clips_dir()
+        for row in clip_rows:
+            if row["kind"] == "upload" and row["file_name"]:
+                path = clips_dir / row["file_name"]
+                if path.exists():
+                    zf.write(path, f"clips/{row['file_name']}")
+        screenshots_dir = get_research_screenshots_dir()
+        for row in screenshot_rows:
+            path = screenshots_dir / row["file_name"]
+            if path.exists():
+                zf.write(path, f"screenshots/{row['file_name']}")
+
+    filename = f"coach-potato-export-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}.zip"
+    return FileResponse(
+        tmp.name, media_type="application/zip", filename=filename,
+        background=BackgroundTask(lambda: Path(tmp.name).unlink(missing_ok=True)))
+
+
+FULL_EXPORT_KIND = "full-export"
+MAX_IMPORT_ZIP_BYTES = 500 * 1024 * 1024  # 500 MB — a backup can hold many clips
+
+
+def _read_import_zip(data: bytes):
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+        payload = json.loads(zf.read("data.json"))
+    except (zipfile.BadZipFile, KeyError, json.JSONDecodeError):
+        raise HTTPException(400, "not a valid export .zip file")
+    if payload.get("kind") != FULL_EXPORT_KIND:
+        raise HTTPException(400, "not a coach-potato full-export file")
+    return zf, payload
+
+
+def _import_conflicts(conn, payload):
+    """Scoped to restoring onto a fresh/empty setup: any row that would
+    collide with something already present blocks the whole import (nothing
+    is written) rather than silently overwriting or merging."""
+    conflicts = []
+    for row in payload.get("sessions") or []:
+        if conn.execute("SELECT 1 FROM coaching_sessions WHERE session_date=?",
+                         (row["session_date"],)).fetchone():
+            conflicts.append(f"session on {row['session_date']}")
+    for row in payload.get("blocks") or []:
+        if conn.execute("SELECT 1 FROM blocks WHERE id=?", (row["id"],)).fetchone():
+            conflicts.append(f"block #{row['id']}")
+    for row in payload.get("block_games") or []:
+        if conn.execute("SELECT 1 FROM block_games WHERE id=?", (row["id"],)).fetchone():
+            conflicts.append(f"block game #{row['id']}")
+    for row in payload.get("matchup_notes") or []:
+        if conn.execute(
+                "SELECT 1 FROM matchup_notes WHERE my_champion=? AND opp_champion=?",
+                (row["my_champion"], row["opp_champion"])).fetchone():
+            conflicts.append(f"matchup guide {row['my_champion']} vs {row['opp_champion']}")
+    for row in payload.get("champion_notes") or []:
+        if conn.execute("SELECT 1 FROM champion_notes WHERE champion=?",
+                         (row["champion"],)).fetchone():
+            conflicts.append(f"champion notes for {row['champion']}")
+    for row in payload.get("item_builds") or []:
+        if conn.execute("SELECT 1 FROM champion_item_builds WHERE champion=?",
+                         (row["champion"],)).fetchone():
+            conflicts.append(f"item build for {row['champion']}")
+    for row in payload.get("research_entries") or []:
+        if conn.execute("SELECT 1 FROM research_entries WHERE id=?", (row["id"],)).fetchone():
+            conflicts.append(f"research entry #{row['id']}")
+    for row in payload.get("research_screenshots") or []:
+        if conn.execute("SELECT 1 FROM research_screenshots WHERE id=?", (row["id"],)).fetchone():
+            conflicts.append(f"research screenshot #{row['id']}")
+    for row in payload.get("clips") or []:
+        if conn.execute("SELECT 1 FROM clips WHERE id=?", (row["id"],)).fetchone():
+            conflicts.append(f"clip #{row['id']}")
+    return conflicts
+
+
+def _import_counts(payload):
+    return {
+        "sessions": len(payload.get("sessions") or []),
+        "blocks": len(payload.get("blocks") or []),
+        "matchup_notes": len(payload.get("matchup_notes") or []),
+        "champion_notes": len(payload.get("champion_notes") or []),
+        "item_builds": len(payload.get("item_builds") or []),
+        "research_entries": len(payload.get("research_entries") or []),
+        "clips": len(payload.get("clips") or []),
+    }
+
+
+@app.post("/api/import-all/preview")
+async def api_import_all_preview(file: UploadFile = File(...)):
+    data = await file.read(MAX_IMPORT_ZIP_BYTES + 1)
+    if len(data) > MAX_IMPORT_ZIP_BYTES:
+        raise HTTPException(413, "export file exceeds the 500 MB limit")
+    _, payload = _read_import_zip(data)
+    conn = get_conn()
+    try:
+        conflicts = _import_conflicts(conn, payload)
+    finally:
+        conn.close()
+    return {"counts": _import_counts(payload), "conflicts": conflicts}
+
+
+@app.post("/api/import-all")
+async def api_import_all(file: UploadFile = File(...)):
+    data = await file.read(MAX_IMPORT_ZIP_BYTES + 1)
+    if len(data) > MAX_IMPORT_ZIP_BYTES:
+        raise HTTPException(413, "export file exceeds the 500 MB limit")
+    zf, payload = _read_import_zip(data)
+    conn = get_conn()
+    try:
+        conflicts = _import_conflicts(conn, payload)
+        if conflicts:
+            shown = ", ".join(conflicts[:10]) + ("…" if len(conflicts) > 10 else "")
+            raise HTTPException(409, f"would overwrite existing data: {shown}")
+        with conn:
+            for row in payload.get("sessions") or []:
+                conn.execute(
+                    """INSERT INTO coaching_sessions
+                       (session_date, title, notes, start_ranks, created_at_ms)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (row["session_date"], row.get("title", ""), row.get("notes", ""),
+                     json.dumps(row["start_ranks"]) if row.get("start_ranks") else None,
+                     row.get("created_at_ms")))
+            for row in payload.get("blocks") or []:
+                conn.execute(
+                    """INSERT INTO blocks
+                       (id, title, learnings, pool_snapshot, start_ranks, end_ranks,
+                        closed_at_ms, created_at_ms)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (row["id"], row.get("title", ""), row.get("learnings", ""),
+                     json.dumps(row["pool_snapshot"]) if row.get("pool_snapshot") else None,
+                     json.dumps(row["start_ranks"]) if row.get("start_ranks") else None,
+                     json.dumps(row["end_ranks"]) if row.get("end_ranks") else None,
+                     row.get("closed_at_ms"), row.get("created_at_ms")))
+            for row in payload.get("block_games") or []:
+                conn.execute(
+                    """INSERT INTO block_games (id, block_id, match_id, puuid, notes, added_at_ms)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (row["id"], row["block_id"], row["match_id"], row["puuid"],
+                     row.get("notes", ""), row.get("added_at_ms")))
+            for row in payload.get("matchup_notes") or []:
+                skill_order = row.get("skill_order") or []
+                conn.execute(
+                    """INSERT INTO matchup_notes
+                       (my_champion, opp_champion, notes, runes, patch_version,
+                        skill_order, updated_at_ms)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (row["my_champion"], row["opp_champion"], row.get("notes", ""),
+                     json.dumps(row.get("runes") or []), row.get("patch_version", ""),
+                     json.dumps(skill_order) if any(skill_order) else "",
+                     row.get("updated_at_ms")))
+            for row in payload.get("champion_notes") or []:
+                conn.execute(
+                    "INSERT INTO champion_notes (champion, notes, updated_at_ms) VALUES (?, ?, ?)",
+                    (row["champion"], row.get("notes", ""), row.get("updated_at_ms")))
+            for row in payload.get("item_builds") or []:
+                conn.execute(
+                    """INSERT INTO champion_item_builds (champion, core, situational, updated_at_ms)
+                       VALUES (?, ?, ?, ?)""",
+                    (row["champion"], json.dumps(row.get("core") or []),
+                     json.dumps(row.get("situational") or []), row.get("updated_at_ms")))
+            for row in payload.get("research_entries") or []:
+                conn.execute(
+                    """INSERT INTO research_entries
+                       (id, player_name, champion, opp_champion, title, notes,
+                        created_at_ms, updated_at_ms)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (row["id"], row.get("player_name", ""), row.get("champion", ""),
+                     row.get("opp_champion", ""), row.get("title", ""), row.get("notes", ""),
+                     row.get("created_at_ms"), row.get("updated_at_ms")))
+            for row in payload.get("research_screenshots") or []:
+                conn.execute(
+                    """INSERT INTO research_screenshots
+                       (id, entry_id, caption, file_name, created_at_ms)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (row["id"], row["entry_id"], row.get("caption", ""), row["file_name"],
+                     row.get("created_at_ms")))
+                member = f"screenshots/{row['file_name']}"
+                if member in zf.namelist():
+                    (get_research_screenshots_dir() / row["file_name"]).write_bytes(zf.read(member))
+            for row in payload.get("clips") or []:
+                conn.execute(
+                    """INSERT INTO clips
+                       (id, owner_type, owner_id, label, kind, file_name, url, created_at_ms)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (row["id"], row["owner_type"], row["owner_id"], row.get("label", ""),
+                     row["kind"], row.get("file_name"), row.get("url"), row.get("created_at_ms")))
+                if row["kind"] == "upload" and row.get("file_name"):
+                    member = f"clips/{row['file_name']}"
+                    if member in zf.namelist():
+                        (get_clips_dir() / row["file_name"]).write_bytes(zf.read(member))
+        return {"imported": _import_counts(payload)}
+    finally:
+        conn.close()
 
 
 @app.delete("/api/sessions/{session_id}")
