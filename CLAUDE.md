@@ -47,7 +47,7 @@ change, not a crawler change.
   through CI `build.yml` on all three OSes. `python-multipart` was added
   for the clips feature's file-upload endpoints (`Form`/`File`/`UploadFile`
   in app.py) — FastAPI raises at startup if it's missing, easy to mis-diagnose.
-  `reportlab` was added for the Champ guide's PDF export
+  `reportlab` was added for the Matchup guide's PDF export
   (`server/pdf_export.py`) — pure-Python-installable prebuilt wheels on all
   three OSes, builds clean under PyInstaller like the other compiled/native
   deps here.
@@ -67,7 +67,7 @@ change, not a crawler change.
   fetch DDragon versions.json → cdn/<ver>/data/en_US/champion.json →
   regenerate the file (see git history of the file for the exact script).
 - `static/runes.json` is the static rune tree/row/shard roster (names, icon
-  paths, and numeric match-v5 ids) that drives the Champ guide rune-page
+  paths, and numeric match-v5 ids) that drives the Matchup guide rune-page
   picker (client + `server/rune_data.py`, the single loader both `app.py`
   validation and `crawler.py` decoding go through). Refresh after a rune
   rework: DDragon versions.json → cdn/<ver>/data/en_US/runesReforged.json
@@ -78,7 +78,7 @@ change, not a crawler change.
   served from `raw.communitydragon.org/.../perk-images/statmods/<icon
   lowercased>`. **The numeric `id` fields must stay correct** — they're how
   `rune_data.decode_perks()` turns a match-v5 participant's `perks` payload
-  (tree/rune/shard ids) into the same rune-page shape as the champ guide.
+  (tree/rune/shard ids) into the same rune-page shape as the matchup guide.
 - Timestamps are **ms epoch** everywhere in the db; match-v5 `startTime`
   param is **seconds**.
 
@@ -122,7 +122,7 @@ change, not a crawler change.
   tabs, buttons, chip highlights) follows a custom color for free — watch
   for new one-off `rgba(42, 120, 214, ...)`-style literals bypassing this.
   `default_champion` (optional, `_validate_champion`d if given) is
-  preselected as "My champion" on the Champ guide (`guide.js`'s
+  preselected as "My champion" on the Matchup guide (`guide.js`'s
   `loadGuideChampionOptions`, ahead of the "first played champion"
   fallback) — set on `state.defaultChampion` from `/api/settings` at app
   init and again after a settings save, so it applies without a reload.
@@ -178,8 +178,8 @@ change, not a crawler change.
   matchups view (own tab: expanded rows with Overview [win/loss strip + block
   notes] / Games tabs; a 📖 link per row — shown only when a specific "My
   champion" filter is active, since guides are scoped per champion pair —
-  deep-links to that matchup's Champ guide) in `matchups.js`;
-  a ⏱ button per matchup row (also on Champ-guide rows) opens the
+  deep-links to that matchup's Matchup guide) in `matchups.js`;
+  a ⏱ button per matchup row (also on Matchup-guide rows) opens the
   cooldown-comparison modal (`cooldowns.js`: generic
   `#modal-overlay`/`#modal-box` shell in index.html; spell data fetched
   from DDragon `champion/<id>.json` at open time, session-cached; two view
@@ -193,7 +193,7 @@ change, not a crawler change.
   2k-1, R at 6/11/16] + freeform haste sources; reduced cd =
   base/(1+haste/100), R adds ult haste. Grid persists per champion in
   localStorage `cp-skill-grid-<champ>` [legacy `cp-skill-order-<champ>`
-  priority lists auto-convert]; "Save build to champ guide" writes it to
+  priority lists auto-convert]; "Save build to matchup guide" writes it to
   `matchup_notes.skill_order` for the open matchup — saved builds preload
   on open and display read-only in the guide row via `skillGridMini`.
   `PUT /api/matchups/notes/{my}/{opp}` is a PARTIAL update: only body keys
@@ -201,7 +201,7 @@ change, not a crawler change.
   fields; `db.set_matchup_note` keeps un-passed fields via a _KEEP
   sentinel);
   trends view (SVG small-multiple charts + breakdown table) in `trends.js`;
-  blocks view in `blocks.js`; Champ guide view (own nav tab: pick "My
+  blocks view in `blocks.js`; Matchup guide view (own nav tab: pick "My
   champion" from the full roster — not just played champions — see/edit
   general champion notes, full rune pages + patch + notes for every matchup
   it has faced, or add one for a matchup not yet played via the shared
@@ -231,7 +231,7 @@ Between/before snapshots, `stats._with_estimates` interleaves ±20 LP estimated
 points from ranked-solo win/loss (`estimated: true`, rendered faint; each real
 snapshot resets the drift, backward walk reconstructs pre-snapshot history).
 `matchup_notes(my_champion+opp_champion PK, notes, runes, patch_version,
-updated_at_ms)` — "Champ guide" scoped per (your champion, opponent
+updated_at_ms)` — "Matchup guide" scoped per (your champion, opponent
 champion) pair: Markdown notes on how to play the matchup, a freeform patch
 string, and `runes` — a JSON array of full rune pages (a matchup can carry
 more than one, e.g. alternatives being tested). Each page: `{label,
@@ -270,7 +270,7 @@ validated everywhere it's written (`PATCH_VERSION_RE`, e.g. 16.14 or
 16.14.1, or empty); the guide editor offers a patch dropdown built from
 DDragon versions.json (cached in `state.ddragonVersions` by
 `loadDdragonVersion`, major.minor deduped), defaulting to the current
-patch. "Your champion" defaults (Champ guide pre-selection, cooldown
+patch. "Your champion" defaults (Matchup guide pre-selection, cooldown
 popup, legacy-migrate select) come from the champion pool's first entry —
 `poolChampionOrder()` in app.js (flattened main→core→counter, cached,
 reset on pool save); use it for any future your-champion-scoped feature.
@@ -298,7 +298,7 @@ essentially every patch. UI in `guide.js` (`itemBuildBlock`/
 `renderGuideItemBuild`): an edit/view toggle like general notes, a
 searchable icon picker shared between the core list and every situational
 section (`itemPickerTarget` tracks which list is receiving the next pick).
-Champ guide export/import (`server/crypto.py`): `POST /api/matchups/notes/
+Matchup guide export/import (`server/crypto.py`): `POST /api/matchups/notes/
 export` bundles one champion's `champion_notes` + `champion_item_builds` +
 all its `matchup_notes` rows into a downloadable JSON file; an optional
 `password` in the request body encrypts the payload (PBKDF2-HMAC-SHA256
@@ -308,10 +308,10 @@ AES-128 via the `cryptography` package — a real cipher, not obfuscation).
 which opponents would be added/overwritten without writing anything;
 `POST /api/matchups/notes/import` performs the writes. Wrong/missing
 password on an encrypted file → 401. UI in `guide.js` (Export/Import menus
-on the Champ guide page); import always shows the preview's overwrite
+on the Matchup guide page); import always shows the preview's overwrite
 count in a `confirm()` before committing.
 `GET /api/matchups/notes/export.pdf?my_champion=` — a printable PDF
-mirroring the whole Champ guide page (general notes, item build, and every
+mirroring the whole Matchup guide page (general notes, item build, and every
 matchup: patch, rune pages, Markdown notes) except the "Recent games"
 column, which is deliberately left out — built by `server/pdf_export.py`
 (reportlab). Unlike the JSON export, this fetches icons live at export
@@ -350,7 +350,7 @@ either `None` if not recorded — on every row from both `GET
 "Recent games" table uses a ▸/▾ toggle per game (`.runes-toggle`,
 `renderRecent`/`runesCompareCol` in app.js) that expands both players'
 rune pages side by side, via the shared `runePageIcons()` (guide.js). The
-Champ guide's own "Recent games" column (`recentGamesColumn` in guide.js)
+Matchup guide's own "Recent games" column (`recentGamesColumn` in guide.js)
 still only shows your own runes inline, un-toggled — `opp_runes` is
 available there too if that ever needs mirroring. Also joined (same
 myr/oppr pattern) into `stats.block_games_detailed`, so a block game's

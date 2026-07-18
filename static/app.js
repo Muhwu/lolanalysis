@@ -1128,7 +1128,7 @@ async function refreshLegacySection() {
   $("#legacy-notes-summary").textContent =
     `${info.count} matchup note(s) from before the champ-guide update — ` +
     `${Object.keys(info.notes).map(displayName).join(", ")} — aren't tied to one of ` +
-    `your champions, so they don't appear in the Champ guide. Assign them to a ` +
+    `your champions, so they don't appear in the Matchup guide. Assign them to a ` +
     `champion, or delete them.`;
   const select = $("#legacy-migrate-champion");
   if (!select.options.length) {
@@ -1643,7 +1643,7 @@ async function init(firstLoad = true) {
   renderAccountSelector();
   // loadRuneTrees (guide.js) is idempotent — populates RUNE_TREES/SHARD_ROWS
   // for the recent-games rune icons on this Overview tab too, even if the
-  // user never visits the Champ guide tab
+  // user never visits the Matchup guide tab
   await Promise.all([loadFilterOptions(), loadRuneTrees()]);
   await refresh();
   if (firstLoad && location.hash === "#matchups") setMainView("matchups");

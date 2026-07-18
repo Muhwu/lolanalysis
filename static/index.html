@@ -17,7 +17,7 @@
     <button id="nav-progress" role="tab">Coaching progress</button>
     <button id="nav-trends" role="tab">Trends</button>
     <button id="nav-blocks" role="tab">Blocks</button>
-    <button id="nav-guide" role="tab">Champ guide</button>
+    <button id="nav-guide" role="tab">Matchup guide</button>
     <button id="nav-research" role="tab">Research</button>
   </div>
   <details id="account-select" class="col-picker hidden" aria-label="Accounts">
@@ -158,7 +158,7 @@
         <label><input type="checkbox" class="view-toggle-cb" value="progress" checked> Coaching progress</label>
         <label><input type="checkbox" class="view-toggle-cb" value="trends" checked> Trends</label>
         <label><input type="checkbox" class="view-toggle-cb" value="blocks" checked> Blocks</label>
-        <label><input type="checkbox" class="view-toggle-cb" value="guide" checked> Champ guide</label>
+        <label><input type="checkbox" class="view-toggle-cb" value="guide" checked> Matchup guide</label>
         <label><input type="checkbox" class="view-toggle-cb" value="research" checked> Research</label>
       </div>
       <p class="muted">Untick views you don't use to hide them from the top bar
@@ -198,7 +198,7 @@
         <datalist id="champ-list"></datalist>
       </div>
       <p class="muted">Ordered — drag chips to reorder; the first champion is
-        your main and acts as your default (Champ guide, cooldown comparison).
+        your main and acts as your default (Matchup guide, cooldown comparison).
         The pool is grouped on top of champion dropdowns and stamped onto
         completed blocks. Saves immediately with "Save pool".</p>
     </div>
@@ -348,16 +348,17 @@
     </div>
   </div>
   <p class="muted">Expand a matchup for the win/loss timeline and block notes. Pick a
-    "My champion" filter to jump to its Champ guide (📖) for runes, patch, and
+    "My champion" filter to jump to its Matchup guide (📖) for runes, patch, and
     notes on how to play the matchup.</p>
   <div id="mu-table"></div>
 </section>
 </div>
 
 <div id="guide-view" class="hidden">
-<section class="filter-row" aria-label="Champ guide filters">
+<section class="filter-row" aria-label="Matchup guide filters">
   <div class="filter-group">
     <label class="filter-label" for="guide-champion">My champion</label>
+    <span id="guide-champion-icon"></span>
     <select id="guide-champion"></select>
   </div>
   <span class="muted">Runes, patch, and Markdown notes for each matchup this champion faces.</span>
@@ -373,7 +374,7 @@
       </div>
     </details>
     <details class="col-picker">
-      <summary class="preset" title="Import a champ guide export">Import</summary>
+      <summary class="preset" title="Import a matchup guide export">Import</summary>
       <div class="col-menu">
         <input type="file" id="guide-import-file" accept="application/json">
         <input type="password" id="guide-import-password" placeholder="password (if protected)" style="width:100%">
@@ -393,7 +394,7 @@
 </section>
 
 <section>
-  <h2>Champ guide</h2>
+  <h2>Matchup guide</h2>
   <div id="guide-list"></div>
   <form id="guide-add-form" class="filter-row" style="margin-top:10px">
     <div class="filter-group">

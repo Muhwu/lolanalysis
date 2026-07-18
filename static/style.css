@@ -806,7 +806,8 @@ td.rank-cell { font-size: 12px; line-height: 1.5; }
 .research-screenshot img { max-width: 100%; border-radius: 4px; display: block; }
 .research-screenshot .chip-x { position: absolute; top: 2px; right: 4px; background: var(--surface-1); }
 
-/* ---------- champ guide view ---------- */
+/* ---------- matchup guide view ---------- */
+#guide-champion-icon img { width: 24px; height: 24px; border-radius: 5px; display: block; }
 .mu-guide-link { font-size: 14px; }
 #guide-list .guide-row {
   max-width: 1200px; margin: 0 0 18px; padding-bottom: 14px;

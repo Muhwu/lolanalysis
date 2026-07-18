@@ -1,5 +1,5 @@
 "use strict";
-/* Champ guide view: pick any champion (full roster, not just ones you've
+/* Matchup guide view: pick any champion (full roster, not just ones you've
    played) and see/edit a guide — general notes, and per-matchup Markdown
    notes, patch version, and one or more full rune pages (primary tree +
    keystone + 3 minors, secondary tree + 2 minors, 3 stat shards) — for
@@ -128,6 +128,7 @@ async function initGuide() {
       guideState.editing = null;
       guideState.editingGeneral = false;
       guideState.editingItemBuild = false;
+      updateGuideChampionIcon();
       loadGuide();
     });
     $("#guide-add-form").addEventListener("submit", (e) => {
@@ -161,6 +162,11 @@ async function loadGuideChampionOptions() {
   }
   const options = await championOptions(guideState.myChampion);
   $("#guide-champion").innerHTML = options || `<option value="">No champions found</option>`;
+  updateGuideChampionIcon();
+}
+
+function updateGuideChampionIcon() {
+  $("#guide-champion-icon").innerHTML = champIcon(guideState.myChampion);
 }
 
 async function loadGuide() {
@@ -568,7 +574,7 @@ function guideRow(m) {
       <button class="preset icon-btn guide-cd-link" data-opp="${escapeHtml(champ)}"
         title="Compare ability cooldowns" aria-label="Compare ability cooldowns">⏱</button>
       ${editing || !hasAny ? "" : `<button class="preset icon-btn guide-edit" data-opp="${escapeHtml(champ)}"
-        title="Edit champ guide" aria-label="Edit champ guide">✎</button>`}
+        title="Edit matchup guide" aria-label="Edit matchup guide">✎</button>`}
     </div>
     <div class="guide-row-grid">
       <div class="guide-row-main">${body}</div>
@@ -604,7 +610,7 @@ function recentGamesColumn(champ) {
 function renderGuide() {
   const target = $("#guide-list");
   if (!guideState.myChampion) {
-    target.innerHTML = `<div class="empty">Pick a champion above to see or build its champ guide.</div>`;
+    target.innerHTML = `<div class="empty">Pick a champion above to see or build its matchup guide.</div>`;
     return;
   }
   const rows = [...guideState.matchups].sort((a, b) => {

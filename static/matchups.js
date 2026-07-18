@@ -2,7 +2,7 @@
 /* Matchups view: matchup table with a tabbed expansion (overview: win/loss
    timeline + block notes; games: per-game list). When a specific "My
    champion" filter is active, each row also links out to that champion's
-   entry on the standalone Champ guide page (guide.js) for runes/patch/notes.
+   entry on the standalone Matchup guide page (guide.js) for runes/patch/notes.
    Uses globals from app.js: state, $, getJSON, QUEUE_NAMES, escapeHtml,
    displayName, champIcon, fmt, pct, wrCell, fmtDate, fmtDuration, titleCase,
    renderNotes, metricGroupsPanel, wirePromoteButtons. Uses openGuide from
@@ -17,7 +17,7 @@ const muState = {
   minGames: 1,
   view: "flat", // flat | rank
   rows: [],
-  guideFlags: new Set(), // opp_champion set with a champ guide for muState.champion
+  guideFlags: new Set(), // opp_champion set with a matchup guide for muState.champion
   expanded: new Set(),
   tab: new Map(),       // matchup key -> "overview" | "games"
   games: new Map(),     // matchup key -> games list
@@ -327,8 +327,8 @@ function matchupRow(row) {
   const guideLink = muState.champion
     ? `<button class="preset icon-btn mu-guide-link" data-my="${escapeHtml(muState.champion)}"
         data-opp="${escapeHtml(row.opp_champion)}"
-        title="${muState.guideFlags.has(row.opp_champion) ? "Open champ guide" : "Write a champ guide"}"
-        aria-label="Open champ guide">${muState.guideFlags.has(row.opp_champion) ? "📖" : "📖+"}</button>`
+        title="${muState.guideFlags.has(row.opp_champion) ? "Open matchup guide" : "Write a matchup guide"}"
+        aria-label="Open matchup guide">${muState.guideFlags.has(row.opp_champion) ? "📖" : "📖+"}</button>`
     : "";
   const cdLink = `<button class="preset icon-btn mu-cd-link" data-opp="${escapeHtml(row.opp_champion)}"
       title="Compare ability cooldowns" aria-label="Compare ability cooldowns">⏱</button>`;

@@ -1,4 +1,4 @@
-"""Renders a champion's Champ guide (general notes + every matchup: patch,
+"""Renders a champion's Matchup guide (general notes + every matchup: patch,
 rune pages, Markdown notes) as a printable PDF. Rune/tree/shard icons are
 fetched live from ddragon/CommunityDragon at export time (same CDN URLs the
 frontend hotlinks in guide.js) and embedded — unlike the JSON export, this
@@ -258,8 +258,8 @@ def build_champion_guide_pdf(champion, general_notes, item_build, guide):
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=LETTER, leftMargin=20 * mm, rightMargin=20 * mm,
-        topMargin=18 * mm, bottomMargin=18 * mm, title=f"{champion} — Champ Guide")
-    story = [Paragraph(f"{html.escape(champion)} — Champ Guide", styles["Title"]), Spacer(1, 4)]
+        topMargin=18 * mm, bottomMargin=18 * mm, title=f"{champion} — Matchup Guide")
+    story = [Paragraph(f"{html.escape(champion)} — Matchup Guide", styles["Title"]), Spacer(1, 4)]
 
     if general_notes and general_notes.strip():
         story.append(Paragraph("General notes", styles["H1"]))

@@ -1,5 +1,5 @@
 "use strict";
-/* Cooldown comparison popup (opened from the Matchups and Champ guide
+/* Cooldown comparison popup (opened from the Matchups and Matchup guide
    views): your champion's ability cooldowns on the left, the opponent's on
    the right. Each side has a level slider and an 18×4 skill-order grid
    (level × Q/W/E/R — click a cell to put that level's point into that
@@ -8,7 +8,7 @@
    ability haste — items, runes, buffs, whatever); reduced cooldowns render
    next to the base values. Spell data comes from DDragon's
    champion/<id>.json at open time (cached per session). Your side's build
-   can be saved to the champ guide for the open matchup
+   can be saved to the matchup guide for the open matchup
    (matchup_notes.skill_order); the grid otherwise persists per champion in
    localStorage. Uses globals from app.js: state, $, getJSON, escapeHtml,
    champIcon, displayName, championOptions, ICON_NAME_FIXES. */
@@ -192,7 +192,7 @@ function skillGridHtml(sideKey) {
     <span class="cd-grid-status" data-side="${sideKey}"></span></div>`;
 }
 
-// compact read-only variant, shared with the champ guide's build display
+// compact read-only variant, shared with the matchup guide's build display
 function skillGridMini(cells) {
   const grid = [...cells, ...Array(GRID_LEVELS).fill("")].slice(0, GRID_LEVELS);
   return `<div class="skill-grid skill-grid-mini">${SPELL_KEYS.map((key) => `<div class="sg-row">
@@ -303,7 +303,7 @@ function renderCooldowns() {
   const saveBtn = cdState.sides.me.champ && cdState.sides.opp.champ
     ? `<span class="muted cd-save-status"></span>
       <button type="button" class="preset cd-save-build"
-        title="Save your skill order to the champ guide (${escapeHtml(displayName(cdState.sides.me.champ))} vs ${escapeHtml(displayName(cdState.sides.opp.champ))})">💾 Save build</button>` : "";
+        title="Save your skill order to the matchup guide (${escapeHtml(displayName(cdState.sides.me.champ))} vs ${escapeHtml(displayName(cdState.sides.opp.champ))})">💾 Save build</button>` : "";
   box.innerHTML = `
     <div class="modal-head">
       <h3>Cooldown comparison</h3>
@@ -373,7 +373,7 @@ function wireCooldowns(box) {
       });
     if (response.ok) {
       status.textContent = "saved ✓";
-      // keep an open Champ guide view in sync (guide.js loads before us)
+      // keep an open Matchup guide view in sync (guide.js loads before us)
       if (typeof guideState !== "undefined" && guideState.myChampion === me) {
         const entry = guideState.guide[opp]
           || (guideState.guide[opp] = { notes: "", runes: [], patch_version: "", skill_order: [] });
