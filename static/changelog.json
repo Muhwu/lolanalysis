@@ -1,6 +1,13 @@
 {
   "entries": [
     {
+      "version": "1.42.1",
+      "date": "2026-07-21",
+      "items": [
+        "Renamed the block's \"current\" badge to \"active\""
+      ]
+    },
+    {
       "version": "1.42.0",
       "date": "2026-07-21",
       "items": [

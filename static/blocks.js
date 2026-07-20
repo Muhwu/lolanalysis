@@ -545,7 +545,7 @@ function blockCard(block, isCurrent) {
         value="${escapeHtml(block.title)}" placeholder="${escapeHtml(blockDate(block))}"
         title="Block name (defaults to its date)">
       <span class="block-index" title="Block number">#${blockIndex(block)}</span>
-      ${isCurrent ? `<span class="block-badge">current</span>` : ""}
+      ${isCurrent ? `<span class="block-badge">active</span>` : ""}
       ${block.closed ? `<span class="block-badge block-closed"
         title="Closed before reaching ${blockState.blockSize} games">closed early</span>` : ""}
       <span class="muted">${block.games.length}/${blockState.blockSize} games
