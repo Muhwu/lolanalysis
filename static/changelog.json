@@ -1,6 +1,13 @@
 {
   "entries": [
     {
+      "version": "1.37.1",
+      "date": "2026-07-20",
+      "items": [
+        "Fixed duplicate items in the item-build picker (some items appeared twice) — the list now shows one entry per item"
+      ]
+    },
+    {
       "version": "1.37.0",
       "date": "2026-07-18",
       "items": [

@@ -52,21 +52,31 @@ async function loadRuneTrees() {
   SHARD_ROWS.push(...data.shardRows);
 }
 
+// DDragon's item.json lists several item ids under the same display name
+// (base items alongside masterwork/variant entries), so collapse by name —
+// keep the first after sorting. We match/store builds by name, so one entry
+// per name is what the picker wants.
+function dedupeItemsByName(items) {
+  const seen = new Set();
+  return items.filter((i) => (seen.has(i.name) ? false : seen.add(i.name)));
+}
+
 async function loadItemData() {
   if (ITEMS.length || !state.ddragonVersion) return;
-  const cacheKey = `item-data-${state.ddragonVersion}`;
+  // v2: earlier caches stored a list with duplicate names — the bump forces a refresh
+  const cacheKey = `item-data-v2-${state.ddragonVersion}`;
   try {
     const cached = localStorage.getItem(cacheKey);
     if (cached) {
-      ITEMS.push(...JSON.parse(cached));
+      ITEMS.push(...dedupeItemsByName(JSON.parse(cached)));
       return;
     }
     const data = await getJSON(
       `https://ddragon.leagueoflegends.com/cdn/${state.ddragonVersion}/data/en_US/item.json`);
-    const items = Object.values(data.data || {})
+    const items = dedupeItemsByName(Object.values(data.data || {})
       .filter((item) => item.gold && item.gold.purchasable && item.maps && item.maps["11"])
       .map((item) => ({ name: item.name, icon: item.image.full }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => a.name.localeCompare(b.name)));
     localStorage.setItem(cacheKey, JSON.stringify(items));
     ITEMS.push(...items);
   } catch {
