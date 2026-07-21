@@ -336,6 +336,20 @@ def upsert_player(conn, puuid, game_name, tag_line, is_tracked=False):
         )
 
 
+def delete_account_data(conn, puuid):
+    """Purge a player's crawled data — participant rows, coaching metrics,
+    runes, rank cache/history, crawl watermarks, and the players row itself.
+    Shared `matches` rows and user-authored content (blocks, sessions, notes)
+    are left untouched; block_games that referenced this puuid simply stop
+    hydrating. Re-adding + crawling the account restores it, since Riot's API
+    is the source of the crawled data."""
+    with conn:
+        for tbl in ("participant_metrics", "participant_runes", "participants",
+                    "crawl_state", "player_ranks", "rank_history"):
+            conn.execute(f"DELETE FROM {tbl} WHERE puuid=?", (puuid,))
+        conn.execute("DELETE FROM players WHERE puuid=?", (puuid,))
+
+
 def set_player_rank(conn, puuid, tier, division, lp, fetched_at_ms):
     with conn:
         conn.execute(

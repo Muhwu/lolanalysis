@@ -1199,12 +1199,37 @@ function renderAccountChips() {
   const input = box.querySelector(".chip-input");
   input.insertAdjacentHTML("beforebegin", settingsUi.accounts.map((a) =>
     `<span class="chip chip-plain">${escapeHtml(a)}
-       <button class="chip-x" data-account="${escapeHtml(a)}" title="Remove"
-         aria-label="Remove ${escapeHtml(a)}">×</button></span>`).join(""));
+       <button class="chip-x" data-account="${escapeHtml(a)}" title="Remove from the tracked list (on Save)"
+         aria-label="Remove ${escapeHtml(a)}">×</button>
+       <button class="chip-del" data-account="${escapeHtml(a)}"
+         title="Delete this account and its crawled data from the database"
+         aria-label="Delete ${escapeHtml(a)} from the database">🗑</button></span>`).join(""));
   box.querySelectorAll(".chip-x").forEach((btn) =>
     btn.addEventListener("click", () => {
       settingsUi.accounts = settingsUi.accounts.filter((a) => a !== btn.dataset.account);
       renderAccountChips();
+    }));
+  box.querySelectorAll(".chip-del").forEach((btn) =>
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const account = btn.dataset.account;
+      if (!confirm(`Delete ${account} and all its crawled data (matches, coaching `
+        + `metrics, runes, rank history) from the database?\n\nYour blocks, sessions and `
+        + `notes are kept. You can re-add and re-crawl the account later.`)) return;
+      const res = await fetch("/api/accounts", {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account }),
+      });
+      const bodyj = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        $("#settings-status").textContent = bodyj.detail || `error ${res.status}`;
+        return;
+      }
+      settingsUi.accounts = bodyj.accounts || settingsUi.accounts.filter((a) => a !== account);
+      renderAccountChips();
+      $("#settings-status").textContent =
+        `deleted ${account} — ${bodyj.players_deleted} player record(s) purged`;
+      init(false); // stats/account tabs change now the data's gone
     }));
 }
 

@@ -1,6 +1,13 @@
 {
   "entries": [
     {
+      "version": "1.45.0",
+      "date": "2026-07-21",
+      "items": [
+        "Delete an account from the database — each account in Settings now has a 🗑 button that removes it and purges its crawled data (matches, coaching metrics, runes, rank history); your blocks, sessions and notes are kept, and you can re-add and re-crawl it later"
+      ]
+    },
+    {
       "version": "1.44.1",
       "date": "2026-07-21",
       "items": [

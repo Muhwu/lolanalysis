@@ -310,6 +310,34 @@ def api_put_settings(body: dict):
         conn.close()
 
 
+@app.delete("/api/accounts")
+def api_delete_account(body: dict):
+    """Delete a tracked account: remove it from the accounts setting AND purge
+    its crawled data from the db (`db.delete_account_data`). Riot can always
+    re-supply the crawled data, so this is the one crawled-data delete allowed;
+    user-authored content is untouched. Case-insensitive match on Name#TAG."""
+    account = (body or {}).get("account")
+    account = str(account or "").strip()
+    name, sep, tag = account.partition("#")
+    if not sep or not name.strip() or not tag.strip():
+        raise HTTPException(400, "account must be Name#TAG")
+    conn = get_conn()
+    try:
+        stored = db.get_settings(conn)
+        accounts = json.loads(stored.get("accounts") or "[]")
+        accounts = [a for a in accounts if a.strip().lower() != account.lower()]
+        db.set_settings(conn, {"accounts": json.dumps(accounts)})
+        rows = conn.execute(
+            "SELECT puuid FROM players "
+            "WHERE lower(game_name)=lower(?) AND lower(tag_line)=lower(?)",
+            (name.strip(), tag.strip())).fetchall()
+        for r in rows:
+            db.delete_account_data(conn, r["puuid"])
+        return {"account": account, "players_deleted": len(rows), "accounts": accounts}
+    finally:
+        conn.close()
+
+
 @app.post("/api/settings/background")
 async def api_set_background(file: UploadFile = File(...)):
     ext = Path(file.filename or "").suffix.lower()
