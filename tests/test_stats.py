@@ -74,6 +74,16 @@ def test_matchups_basic_winrate(conn):
     assert rows[0]["opp_champion"] == "Darius"  # sorted by games desc
 
 
+def test_matchups_include_metric_averages(conn):
+    m1, _ = add_match(conn, opp_champ="Darius", win=True)
+    m2, _ = add_match(conn, opp_champ="Darius", win=False)
+    add_metrics(conn, m1, cs_diff_7=20.0, cs_at_10=90)
+    add_metrics(conn, m2, cs_diff_7=10.0, cs_at_10=70)
+    row = stats.matchups(conn, ME)[0]
+    assert row["metrics"]["cs_diff_7"] == pytest.approx(15.0)   # average of 20 and 10
+    assert row["metrics"]["cs_at_10"] == pytest.approx(80.0)
+
+
 def test_matchup_rates_and_kda(conn):
     add_match(conn, opp_champ="Darius", win=True, duration=1800,
               kills=6, deaths=3, assists=9, cs=210, gold=12000, dmg=18000)
@@ -347,6 +357,18 @@ def test_progress_segments_carry_session_start_ranks(conn):
 def test_progress_no_sessions_returns_empty(conn):
     add_match(conn)
     assert stats.progress_segments(conn, [ME], [], now_ms=NOW_MS) == []
+
+
+def test_progress_segments_include_metric_averages(conn):
+    # two games in the "since last session" segment with delta metrics
+    m1, _ = add_match(conn, when=S1_MS + DAY_MS)
+    m2, _ = add_match(conn, when=S1_MS + 2 * DAY_MS)
+    add_metrics(conn, m1, cs_diff_14=30.0)
+    add_metrics(conn, m2, cs_diff_14=10.0)
+    session_rows = [{"session_date": "2026-06-28", "title": "t", "start_ranks": None}]
+    segments = stats.progress_segments(conn, [ME], session_rows, now_ms=NOW_MS)
+    since = segments[-1]  # "Since <last session>"
+    assert since["metrics"]["cs_diff_14"] == pytest.approx(20.0)
 
 
 def add_metrics(conn, match_id, puuid=ME, **overrides):

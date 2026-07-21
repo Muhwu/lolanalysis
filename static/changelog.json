@@ -1,6 +1,14 @@
 {
   "entries": [
     {
+      "version": "1.43.0",
+      "date": "2026-07-21",
+      "items": [
+        "Matchups: the column picker now adds/removes columns on the main matchups table (including metric averages like the lane Δ's), and an expanded game always shows every stat",
+        "Coaching progress: one column picker for the table — the lane Δ metrics are now available there as period averages; the expanded period panel always shows every stat"
+      ]
+    },
+    {
       "version": "1.42.1",
       "date": "2026-07-21",
       "items": [

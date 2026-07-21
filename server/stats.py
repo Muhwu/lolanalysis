@@ -201,18 +201,27 @@ AVG(game_duration_s) AS avg_duration_s
 """
 
 
+def _pack_metrics(row):
+    """Split a query row into base fields + a nested `metrics` dict (per-metric
+    averages), matching the shape the frontend metric columns/panels expect."""
+    record = dict(row)
+    record["metrics"] = {k: record.pop(k) for k in metric_keys()}
+    return record
+
+
 def matchups(conn, puuid, from_ms=None, to_ms=None, champion=None, queues=None,
              rank_tier=None, min_games=1):
     base, params = _filtered_base(puuid, from_ms, to_ms, champion, queues, rank_tier)
     params["min_games"] = min_games
     sql = f"""
-        SELECT opp_champion, {_AGG}
+        SELECT opp_champion, {_AGG},
+               {_metric_agg_select()}
         FROM ({base})
         GROUP BY opp_champion
         HAVING COUNT(*) >= :min_games
         ORDER BY games DESC, winrate DESC
     """
-    return [dict(r) for r in conn.execute(sql, params)]
+    return [_pack_metrics(r) for r in conn.execute(sql, params)]
 
 
 def matchups_by_rank(conn, puuid, from_ms=None, to_ms=None, champion=None, queues=None,
@@ -220,13 +229,14 @@ def matchups_by_rank(conn, puuid, from_ms=None, to_ms=None, champion=None, queue
     base, params = _filtered_base(puuid, from_ms, to_ms, champion, queues, rank_tier)
     params["min_games"] = min_games
     sql = f"""
-        SELECT rank_tier, opp_champion, {_AGG}
+        SELECT rank_tier, opp_champion, {_AGG},
+               {_metric_agg_select()}
         FROM ({base})
         GROUP BY rank_tier, opp_champion
         HAVING COUNT(*) >= :min_games
         ORDER BY rank_tier, games DESC
     """
-    return [dict(r) for r in conn.execute(sql, params)]
+    return [_pack_metrics(r) for r in conn.execute(sql, params)]
 
 
 def summary(conn, puuid, from_ms=None, to_ms=None, champion=None, queues=None,
@@ -307,8 +317,11 @@ def progress_segments(conn, puuids, sessions, champion=None, queues=None,
         base, params = _filtered_base(
             puuids, from_ms=segment["from_ms"], to_ms=segment["to_ms"] - 1,
             champion=champion, queues=queues, require_opponent=False)
-        totals = dict(conn.execute(f"SELECT {_AGG} FROM ({base})", params).fetchone())
-        results.append({**segment, **totals})
+        row = conn.execute(
+            f"SELECT {_AGG}, {_metric_agg_select()} FROM ({base})", params).fetchone()
+        totals = dict(row)
+        metrics = {k: totals.pop(k) for k in metric_keys()}
+        results.append({**segment, **totals, "metrics": metrics})
     return results
 
 

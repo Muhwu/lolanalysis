@@ -165,12 +165,16 @@ change, not a crawler change.
   `./crawl.sh --backfill-lane-deltas` fills existing rows (has_timeline=0)
   using only the timeline + stored participants for the lane opponent, via
   `db.update_participant_timeline` (which never clobbers challenge metrics).
-  These six are `default_hidden` — matchups per-game, trends and coaching
-  progress each have a metric column picker (`renderMetricColPicker`,
-  localStorage `cp-metriccols-<view>`) that starts them off. Blocks is the
-  exception: its expanded per-game panel shows ALL metrics (no picker), and
-  the deltas are instead selectable as columns on the block-games TABLE
-  (`BLOCK_COLS`, off by default). The web app deepens block-game stats
+  These six are `default_hidden`. Across the app the pattern is: EXPANDED
+  per-game/segment stat panels always show ALL metrics (no picker), and each
+  aggregate TABLE has a column picker whose metric-average columns start off.
+  Matchups (`muAllCols`/`cp-mucols`, base cols default on) and coaching
+  progress (`progressAllCols`/`cp-cols-progress`) get per-opponent /
+  per-segment metric averages from `stats.matchups`/`progress_segments`
+  (both now return a `metrics` dict via `_metric_agg_select`); blocks expose
+  the deltas as `BLOCK_COLS`; trends' breakdown/charts use
+  `renderMetricColPicker` (`cp-metriccols-trends`). The lane deltas render
+  as averages in these tables. The web app deepens block-game stats
   proactively: `_run_crawl` calls `backfill_lane_deltas(block_games_only=True)`,
   and opening Blocks fires `POST /api/blocks/backfill-timelines` (background
   thread `_run_timeline_backfill` → `TIMELINE_STATE`, guarded by

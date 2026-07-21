@@ -60,8 +60,12 @@ async function initMatchups() {
     });
     $("#mu-view-flat").addEventListener("click", () => setMatchupView("flat"));
     $("#mu-view-rank").addEventListener("click", () => setMatchupView("rank"));
-    renderMetricColPicker($("#mu-metric-cols"), "cp-metriccols-matchups",
-      () => renderMU(muState.rows));  // app.js — refilters the expanded stat panels
+    // picker controls the MAIN table's columns (base stats always available,
+    // metric averages incl. lane deltas off by default)
+    renderColPicker($("#mu-metric-cols"), "cp-mucols",
+      muAllCols().map((c) => ({ key: c.key, label: c.label })),
+      colPrefs("cp-mucols", muAllCols().map((c) => c.key), MU_BASE_COLS.map((c) => c.key)),
+      () => renderMU(muState.rows));
   }
   await loadMatchupFilterOptions();
   await loadMatchups();
@@ -283,7 +287,7 @@ function matchupGamesTable(key) {
     </tr>`;
     if (open) {
       html += `<tr class="games-row"><td colspan="10">${
-        metricGroupsPanel(muState.statsCache.get(gkey), "cp-metriccols-matchups")}</td></tr>`;
+        metricGroupsPanel(muState.statsCache.get(gkey))}</td></tr>`;  // expanded shows every stat
     }
     return html;
   }).join("");
@@ -316,22 +320,50 @@ function matchupPanel(row) {
 
 // ---------- table ----------
 
-// sortable columns after the leading toggle <th>; "Notes" holds icons only
-const MU_SORT_COLS = [
-  { key: "opponent", label: "Opponent", type: "text", get: (r) => displayName(r.opp_champion) },
-  { key: "notes", label: "Notes", sortable: false },
-  { key: "games", label: "Games", type: "num" },
-  { key: "wins", label: "W–L", type: "num", get: (r) => r.wins },
-  { key: "winrate", label: "Winrate", type: "num", cls: "wr-col" },
-  { key: "kda", label: "KDA", type: "num" },
-  { key: "cs_min", label: "CS/min", type: "num" },
-  { key: "gold_min", label: "Gold/min", type: "num" },
-  { key: "dmg_min", label: "DMG/min", type: "num" },
-  { key: "avg_duration_s", label: "Avg length", type: "num" },
+// Aggregate stat columns for the main table (the leading toggle, Opponent and
+// Notes columns are always shown and handled separately). Each `cell(row)`
+// renders its <td>. The metric-average columns (incl. lane deltas) are
+// appended from the registry — all off by default; base columns default on.
+const MU_BASE_COLS = [
+  { key: "games", label: "Games", type: "num", get: (r) => r.games, cell: (r) => `<td>${r.games}</td>` },
+  { key: "wins", label: "W–L", type: "num", get: (r) => r.wins, cell: (r) => `<td>${r.wins}–${r.games - r.wins}</td>` },
+  { key: "winrate", label: "Winrate", type: "num", cls: "wr-col", get: (r) => r.winrate,
+    cell: (r) => `<td class="wr-col">${wrCell(r.winrate)}</td>` },
+  { key: "kda", label: "KDA", type: "num", get: (r) => r.kda, cell: (r) => `<td>${fmt(r.kda, 2)}</td>` },
+  { key: "cs_min", label: "CS/min", type: "num", get: (r) => r.cs_min, cell: (r) => `<td>${fmt(r.cs_min)}</td>` },
+  { key: "gold_min", label: "Gold/min", type: "num", get: (r) => r.gold_min, cell: (r) => `<td>${fmt(r.gold_min, 0)}</td>` },
+  { key: "dmg_min", label: "DMG/min", type: "num", get: (r) => r.dmg_min, cell: (r) => `<td>${fmt(r.dmg_min, 0)}</td>` },
+  { key: "avg_duration_s", label: "Avg length", type: "num", get: (r) => r.avg_duration_s,
+    cell: (r) => `<td>${fmtDuration(r.avg_duration_s)}</td>` },
 ];
-const MU_COLS = 11;
 
-function matchupRow(row) {
+// metric-average columns, keyed "m:<metric>" so they never clash with base keys
+function muMetricCols() {
+  return (state.metricsMeta || []).map((m) => ({
+    key: `m:${m.key}`, label: m.label, type: "num", metricKey: m.key, meta: m,
+    get: (r) => (r.metrics ? r.metrics[m.key] : null),
+    cell: (r) => `<td>${fmtMetric(r.metrics ? r.metrics[m.key] : null, m)}</td>`,
+  }));
+}
+
+function muAllCols() { return [...MU_BASE_COLS, ...muMetricCols()]; }
+function muVisibleCols() {
+  const vis = colPrefs("cp-mucols", muAllCols().map((c) => c.key),
+                       MU_BASE_COLS.map((c) => c.key));  // base on, metrics off by default
+  return muAllCols().filter((c) => vis.has(c.key));
+}
+
+// opponent + notes are always present; combine with visible picker cols for
+// both the header (sortable) and sorting lookups
+function muHeaderCols() {
+  return [
+    { key: "opponent", label: "Opponent", type: "text", get: (r) => displayName(r.opp_champion) },
+    { key: "notes", label: "Notes", sortable: false },
+    ...muVisibleCols(),
+  ];
+}
+
+function matchupRow(row, cols) {
   const key = muKey(row);
   const expanded = muState.expanded.has(key);
   const hasBlockNotes = muState.blockNoted && muState.blockNoted.has(row.opp_champion);
@@ -345,23 +377,17 @@ function matchupRow(row) {
     : "";
   const cdLink = `<button class="preset icon-btn mu-cd-link" data-opp="${escapeHtml(row.opp_champion)}"
       title="Compare ability cooldowns" aria-label="Compare ability cooldowns">⏱</button>`;
+  const statCells = muVisibleCols().map((c) => c.cell(row)).join("");
   let html = `<tr>
     <td><button class="preset seg-toggle matchup-toggle" data-key="${escapeHtml(key)}"
       aria-expanded="${expanded}" title="Matchup details">${expanded ? "▾" : "▸"}</button></td>
     <td><span class="champ-cell">${champIcon(row.opp_champion)}${displayName(row.opp_champion)}</span></td>
     <td>${guideLink}${cdLink}${
       hasBlockNotes ? `<span class="note-flag" title="Has block notes">🧱</span>` : ""}</td>
-    <td>${row.games}</td>
-    <td>${row.wins}–${row.games - row.wins}</td>
-    <td class="wr-col">${wrCell(row.winrate)}</td>
-    <td>${fmt(row.kda, 2)}</td>
-    <td>${fmt(row.cs_min)}</td>
-    <td>${fmt(row.gold_min, 0)}</td>
-    <td>${fmt(row.dmg_min, 0)}</td>
-    <td>${fmtDuration(row.avg_duration_s)}</td>
+    ${statCells}
   </tr>`;
   if (expanded) {
-    html += `<tr class="games-row"><td colspan="${MU_COLS}">${matchupPanel(row)}</td></tr>`;
+    html += `<tr class="games-row"><td colspan="${cols}">${matchupPanel(row)}</td></tr>`;
   }
   return html;
 }
@@ -373,7 +399,9 @@ function renderMU(rows) {
     target.innerHTML = `<div class="table-wrap"><div class="empty">No top-lane games match the current filters.</div></div>`;
     return;
   }
-  const head = sortableThead(MU_SORT_COLS, muState.sort, "<th></th>");
+  const headerCols = muHeaderCols();
+  const head = sortableThead(headerCols, muState.sort, "<th></th>");
+  const colspan = headerCols.length + 1; // + leading toggle
   let body;
   if (muState.view === "rank") {
     const groups = new Map();
@@ -384,14 +412,14 @@ function renderMU(rows) {
     body = [...groups.entries()].map(([tier, tierRows]) => {
       const games = tierRows.reduce((a, r) => a + r.games, 0);
       const wins = tierRows.reduce((a, r) => a + r.wins, 0);
-      return `<tr class="rank-header"><td colspan="${MU_COLS}">${titleCase(tier)} — ${games} games, ${pct(wins / games)} WR</td></tr>`
-        + sortRows(tierRows, muState.sort, MU_SORT_COLS).map(matchupRow).join("");
+      return `<tr class="rank-header"><td colspan="${colspan}">${titleCase(tier)} — ${games} games, ${pct(wins / games)} WR</td></tr>`
+        + sortRows(tierRows, muState.sort, headerCols).map((r) => matchupRow(r, colspan)).join("");
     }).join("");
   } else {
-    body = sortRows(rows, muState.sort, MU_SORT_COLS).map(matchupRow).join("");
+    body = sortRows(rows, muState.sort, headerCols).map((r) => matchupRow(r, colspan)).join("");
   }
   target.innerHTML = `<div class="table-wrap"><table>${head}<tbody>${body}</tbody></table></div>`;
-  wireSortable(target, muState.sort, MU_SORT_COLS, () => renderMU(muState.rows));
+  wireSortable(target, muState.sort, headerCols, () => renderMU(muState.rows));
   wireMUHandlers(target);
 }
 
