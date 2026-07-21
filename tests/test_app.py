@@ -700,6 +700,28 @@ def test_champion_general_notes_endpoints(client):
     assert client.put("/api/champions/notes/Gwen", json={}).status_code == 400
 
 
+def test_delete_account_purges_data_and_removes_from_settings(client):
+    import json
+    import os
+    conn = db.connect(os.environ["LOL_DB_PATH"])
+    db.set_settings(conn, {"accounts": json.dumps(["PlayerOne#EUW", "Other#EUW"])})
+    assert conn.execute("SELECT COUNT(*) c FROM participants WHERE puuid=?",
+                        (ME,)).fetchone()["c"] > 0
+    conn.close()
+    r = client.request("DELETE", "/api/accounts", json={"account": "playerone#euw"})  # case-insensitive
+    assert r.status_code == 200
+    body = r.json()
+    assert body["players_deleted"] == 1
+    assert body["accounts"] == ["Other#EUW"]
+    conn = db.connect(os.environ["LOL_DB_PATH"])
+    assert conn.execute("SELECT COUNT(*) c FROM participants WHERE puuid=?",
+                        (ME,)).fetchone()["c"] == 0
+    assert conn.execute("SELECT COUNT(*) c FROM players WHERE puuid=?",
+                        (ME,)).fetchone()["c"] == 0
+    conn.close()
+    assert client.request("DELETE", "/api/accounts", json={"account": "notag"}).status_code == 400
+
+
 def test_champion_item_build_endpoints(client):
     assert client.get("/api/champions/item-build/Gwen").json() == {"core": [], "situational": []}
     body = {"core": ["Riftmaker", "Nashor's Tooth"],
