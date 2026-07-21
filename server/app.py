@@ -1365,6 +1365,48 @@ def api_start_block_series(body: dict):
         conn.close()
 
 
+@app.get("/api/live-game")
+def api_live_game():
+    """Find a tracked account currently in a game (spectator-v5) and return
+    the champions in it. Champions come back as numeric championIds (the
+    frontend maps them via DDragon); role/lane isn't in the spectator payload,
+    so the caller picks the lane opponent. {found: false} when nobody's live."""
+    from .riot_client import NotFoundError, RateLimiter, RiotClient
+    conn = get_conn()
+    try:
+        settings = config.resolve_settings(conn)
+        if not settings["configured"]:
+            raise HTTPException(400, "not configured")
+        tracked = [r["puuid"] for r in
+                   conn.execute("SELECT puuid FROM players WHERE is_tracked=1")]
+    finally:
+        conn.close()
+    client = RiotClient(settings["riot_api_key"], platform=settings["platform"],
+                        limiter=RateLimiter())
+    for puuid in tracked:
+        try:
+            game = client.get_active_game(puuid)
+        except NotFoundError:
+            continue  # this account isn't in a game
+        parts = game.get("participants") or []
+        me = next((p for p in parts if p.get("puuid") == puuid), None)
+        if not me:
+            continue
+        team = me.get("teamId")
+        return {
+            "found": True,
+            "puuid": puuid,
+            "queue_id": game.get("gameQueueConfigId"),
+            "my_champion_id": me.get("championId"),
+            "enemy_champion_ids": [p["championId"] for p in parts
+                                   if p.get("teamId") != team and "championId" in p],
+            "ally_champion_ids": [p["championId"] for p in parts
+                                  if p.get("teamId") == team and p.get("puuid") != puuid
+                                  and "championId" in p],
+        }
+    return {"found": False}
+
+
 def _game_date(game):
     return datetime.fromtimestamp(game["game_creation_ms"] / 1000,
                                   tz=timezone.utc).strftime("%Y-%m-%d")

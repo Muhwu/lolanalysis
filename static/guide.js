@@ -145,6 +145,7 @@ async function initGuide() {
       e.preventDefault();
       addGuideMatchup();
     });
+    $("#guide-live-btn").addEventListener("click", liveLookup);
     wireExportImport();
   }
   await loadChampionRoster(); // loadGuideChampionOptions needs the full roster
@@ -842,6 +843,59 @@ function openGuide(myChampion, oppChampion) {
   setMainView("guide");
 }
 
+// ---------- Live Lookup ----------
+// Find the account currently in a game, switch the guide to that champion,
+// and open the one-pager for the likely lane opponent. Role isn't in the
+// spectator API, so the opponent is guessed from matchup history (all crawled
+// games are top, so the enemy you've faced most as this champion is a strong
+// bet) and can be corrected via the one-pager's enemy switcher.
+async function guessLaneOpponent(myChampion, enemies) {
+  if (!enemies.length) return null;
+  try {
+    const rows = await getJSON(`/api/stats/matchups?${accountParams()}`
+      + `&champion=${encodeURIComponent(myChampion)}&min_games=1`);
+    const faced = new Map(rows.map((r) => [r.opp_champion, r.games]));
+    return [...enemies].sort((a, b) => (faced.get(b) || 0) - (faced.get(a) || 0))[0];
+  } catch {
+    return enemies[0];
+  }
+}
+
+async function liveLookup() {
+  const status = $("#guide-live-status");
+  status.classList.remove("status-error");
+  status.textContent = "Looking up your live game…";
+  let data;
+  try {
+    data = await getJSON("/api/live-game");
+  } catch {
+    status.classList.add("status-error");
+    status.textContent = "Live lookup failed — check your API key.";
+    return;
+  }
+  if (!data.found) {
+    status.textContent = "No live game found on your accounts.";
+    return;
+  }
+  const keyMap = await loadChampionKeyMap(); // app.js
+  const myChampion = keyMap[data.my_champion_id];
+  const enemies = (data.enemy_champion_ids || []).map((id) => keyMap[id]).filter(Boolean);
+  if (!myChampion) {
+    status.classList.add("status-error");
+    status.textContent = "Couldn't identify your champion (champion data unavailable).";
+    return;
+  }
+  status.textContent = "";
+  const opponent = await guessLaneOpponent(myChampion, enemies);
+  guideState.myChampion = myChampion;
+  guideState.editing = null;
+  guideState.editingGeneral = false;
+  await loadGuideChampionOptions();
+  updateGuideChampionIcon();
+  await loadGuide();
+  openOnePager(opponent || enemies[0] || "", enemies);  // enemies enable the switcher
+}
+
 // ---------- general (non-matchup) notes ----------
 
 function generalNotesBlock() {
@@ -1209,7 +1263,7 @@ function wireExportImport() {
 // Full-screen, distraction-free summary of ONE matchup: runes, skill order,
 // item build, matchup notes, general champion notes. Deliberately no
 // history/stats — it's meant to sit on a second screen during a game.
-function openOnePager(opp) {
+function openOnePager(opp, enemies) {
   const my = guideState.myChampion;
   const { notes, runes, patch_version, skill_order } = guideFor(opp);
   const build = guideState.itemBuild || { core: [], situational: [] };
@@ -1239,6 +1293,14 @@ function openOnePager(opp) {
     sections.push(`<section><h3>General ${escapeHtml(displayName(my))} notes</h3>
       <div class="md-body">${renderNotes(guideState.generalNotes)}</div></section>`);
   }
+  // from Live Lookup: since role isn't in the spectator API, offer the 5 enemy
+  // champions to switch the matchup if the auto-guess picked the wrong one
+  const live = enemies || [];
+  const switcher = live.length > 1
+    ? `<div class="op-live-switch"><span class="muted">Laning vs:</span>${
+        live.map((c) => `<button type="button" class="op-enemy-btn${c === opp ? " active" : ""}"
+          data-opp="${escapeHtml(c)}" title="${escapeHtml(displayName(c))}">${champIcon(c)}</button>`).join("")}</div>`
+    : "";
   $("#onepager-body").innerHTML = `
     <div class="op-head">
       <div class="op-title">
@@ -1250,10 +1312,13 @@ function openOnePager(opp) {
       <button type="button" class="preset icon-btn" id="onepager-close"
         title="Close (Esc)" aria-label="Close">✕</button>
     </div>
+    ${switcher}
     ${sections.join("") || `<p class="muted">Nothing recorded for this matchup yet —
       add runes, a build, or notes in the Matchup guide first.</p>`}`;
   $("#onepager-overlay").classList.remove("hidden");
   $("#onepager-close").addEventListener("click", closeOnePager);
+  $("#onepager-body").querySelectorAll(".op-enemy-btn").forEach((btn) =>
+    btn.addEventListener("click", () => openOnePager(btn.dataset.opp, live)));
 }
 
 function closeOnePager() {

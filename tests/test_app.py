@@ -1183,6 +1183,29 @@ def test_block_timeline_backfill_counts_pending_without_starting_when_busy(clien
     monkeypatch.setitem(app_module.CRAWL_STATE, "running", False)
 
 
+def test_live_game_endpoint(client, monkeypatch):
+    from server import riot_client
+    _put_settings(client)  # configure so the endpoint can build a client
+
+    def not_in_game(self, puuid):
+        raise riot_client.NotFoundError(puuid)
+    monkeypatch.setattr(riot_client.RiotClient, "get_active_game", not_in_game)
+    assert client.get("/api/live-game").json() == {"found": False}
+
+    def in_game(self, puuid):
+        return {"gameQueueConfigId": 420, "participants": [
+            {"puuid": puuid, "teamId": 100, "championId": 111},
+            {"puuid": "ally", "teamId": 100, "championId": 444},
+            {"puuid": "e1", "teamId": 200, "championId": 222},
+            {"puuid": "e2", "teamId": 200, "championId": 333}]}
+    monkeypatch.setattr(riot_client.RiotClient, "get_active_game", in_game)
+    data = client.get("/api/live-game").json()
+    assert data["found"] is True
+    assert data["my_champion_id"] == 111
+    assert sorted(data["enemy_champion_ids"]) == [222, 333]
+    assert data["ally_champion_ids"] == [444]
+
+
 def test_date_format_setting(client):
     assert client.get("/api/settings").json()["date_format"] == "iso"  # default
     for fmt in ("us", "eu", "iso"):

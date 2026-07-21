@@ -146,3 +146,10 @@ class RiotClient:
 
     def get_league_entries(self, puuid):
         return self._get(f"{self.platform_host}/lol/league/v4/entries/by-puuid/{puuid}")
+
+    def get_active_game(self, puuid):
+        """Current live game for a puuid (spectator-v5, platform host). Riot
+        returns 404 when the player isn't in a game — the caller treats that
+        as 'not live' rather than an error."""
+        return self._get(
+            f"{self.platform_host}/lol/spectator/v5/active-games/by-puuid/{puuid}")

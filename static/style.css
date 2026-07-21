@@ -851,6 +851,13 @@ td.rank-cell { font-size: 12px; line-height: 1.5; }
   color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;
 }
 #onepager-body .md-body { max-width: none; font-size: 15px; }
+.op-live-switch { display: flex; align-items: center; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.op-enemy-btn {
+  border: 2px solid transparent; border-radius: 8px; padding: 1px; background: none;
+  cursor: pointer; line-height: 0;
+}
+.op-enemy-btn img { width: 30px; height: 30px; border-radius: 6px; display: block; }
+.op-enemy-btn.active { border-color: var(--series-1); }
 .op-runes { display: flex; gap: 28px; flex-wrap: wrap; }
 .op-rune-page .rune-page-title { font-size: 13px; margin-bottom: 6px; }
 .op-rune-page .rune-page-display img { background: var(--surface-1-solid); }

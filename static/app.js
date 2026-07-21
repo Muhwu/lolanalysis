@@ -17,6 +17,7 @@ const state = {
   ddragonVersions: [], // recent DDragon versions, newest first (patch picker)
   poolOrder: null, // champion pool flattened in priority order; null = not fetched
   dateFormat: "iso", // iso | us | eu — drives fmtDate/fmtTime
+  championByKey: null, // numeric championId -> champion id (live-game lookup)
 };
 
 const QUEUE_NAMES = { 400: "Normal Draft", 420: "Ranked Solo", 430: "Normal Blind",
@@ -39,6 +40,20 @@ function displayName(champ) { return DISPLAY_NAME_FIXES[champ] || champ; }
 
 // match-v5 spellings that differ from the DDragon id used in icon URLs
 const ICON_NAME_FIXES = { FiddleSticks: "Fiddlesticks" };
+
+// numeric championId (from spectator/live-game) -> DDragon champion id, built
+// from DDragon champion.json once and cached
+async function loadChampionKeyMap() {
+  if (state.championByKey) return state.championByKey;
+  const map = {};
+  try {
+    const data = await getJSON(
+      `https://ddragon.leagueoflegends.com/cdn/${state.ddragonVersion}/data/en_US/champion.json`);
+    for (const c of Object.values(data.data || {})) map[+c.key] = c.id;
+  } catch { /* offline — live lookup can't map ids, handled by caller */ }
+  state.championByKey = map;
+  return map;
+}
 
 function champIcon(champ) {
   if (!state.ddragonVersion || !champ) return "";

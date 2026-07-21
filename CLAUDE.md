@@ -226,7 +226,14 @@ change, not a crawler change.
   notes] / Games tabs; a 📖 link per row — shown only when a specific "My
   champion" filter is active, since guides are scoped per champion pair —
   deep-links to that matchup's Matchup guide) in `matchups.js`;
-  a 📄 button per Matchup-guide row opens the One Pager
+  Live Lookup (📡 on the Matchup guide) calls `GET /api/live-game`
+  (`riot_client.get_active_game` → spectator-v5 by-puuid on the platform
+  host, per tracked account; 404 = not in a game) which returns the numeric
+  championIds in the game; the client maps them via DDragon champion.json
+  (`loadChampionKeyMap`), switches the guide to your champion, guesses the
+  lane opponent from matchup history (spectator has NO role/lane, so the
+  most-faced enemy is the pick) and opens the One Pager with a 5-enemy
+  switcher to correct it. a 📄 button per Matchup-guide row opens the One Pager
   (`openOnePager` in guide.js, `#onepager-overlay` full-screen opaque
   overlay): a second-screen quick reference for one matchup — runes, skill
   order, item build, matchup + general notes; deliberately NO history/
