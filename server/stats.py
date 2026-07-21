@@ -156,12 +156,19 @@ def _metric_agg_select():
     return ",\n".join(exprs)
 
 
+# which map side I was on: blue = team 100, red = team 200
+_SIDE_TEAM = {"blue": 100, "red": 200}
+
+
 def _filtered_base(puuid, from_ms=None, to_ms=None, champion=None, queues=None,
-                   rank_tier=None, require_opponent=True, opp_champion=None):
+                   rank_tier=None, require_opponent=True, opp_champion=None, side=None):
     puuids = [puuid] if isinstance(puuid, str) else list(puuid)
     sql = _BASE.format(puuid_slots=",".join(f":puuid{i}" for i in range(len(puuids))))
     params = {"remake_s": REMAKE_S}
     params.update({f"puuid{i}": p for i, p in enumerate(puuids)})
+    if side in _SIDE_TEAM:
+        sql += " AND me.team_id = :side_team"
+        params["side_team"] = _SIDE_TEAM[side]
     if opp_champion:
         sql += " AND opp.champion_name = :opp_champion"
         params["opp_champion"] = opp_champion
@@ -210,8 +217,8 @@ def _pack_metrics(row):
 
 
 def matchups(conn, puuid, from_ms=None, to_ms=None, champion=None, queues=None,
-             rank_tier=None, min_games=1):
-    base, params = _filtered_base(puuid, from_ms, to_ms, champion, queues, rank_tier)
+             rank_tier=None, min_games=1, side=None):
+    base, params = _filtered_base(puuid, from_ms, to_ms, champion, queues, rank_tier, side=side)
     params["min_games"] = min_games
     sql = f"""
         SELECT opp_champion, {_AGG},
@@ -225,8 +232,8 @@ def matchups(conn, puuid, from_ms=None, to_ms=None, champion=None, queues=None,
 
 
 def matchups_by_rank(conn, puuid, from_ms=None, to_ms=None, champion=None, queues=None,
-                     rank_tier=None, min_games=1):
-    base, params = _filtered_base(puuid, from_ms, to_ms, champion, queues, rank_tier)
+                     rank_tier=None, min_games=1, side=None):
+    base, params = _filtered_base(puuid, from_ms, to_ms, champion, queues, rank_tier, side=side)
     params["min_games"] = min_games
     sql = f"""
         SELECT rank_tier, opp_champion, {_AGG},
@@ -240,9 +247,9 @@ def matchups_by_rank(conn, puuid, from_ms=None, to_ms=None, champion=None, queue
 
 
 def summary(conn, puuid, from_ms=None, to_ms=None, champion=None, queues=None,
-            rank_tier=None, min_games=1):
+            rank_tier=None, min_games=1, side=None):
     base, params = _filtered_base(puuid, from_ms, to_ms, champion, queues, rank_tier,
-                                  require_opponent=False)
+                                  require_opponent=False, side=side)
     totals = conn.execute(
         f"SELECT {_AGG} FROM ({base})", params
     ).fetchone()
@@ -268,7 +275,7 @@ def summary(conn, puuid, from_ms=None, to_ms=None, champion=None, queues=None,
 
 
 def progress_segments(conn, puuids, sessions, champion=None, queues=None,
-                      now_ms=None, baseline_days=30):
+                      now_ms=None, baseline_days=30, side=None):
     """Aggregate stats per period between coaching sessions.
 
     sessions: dicts with session_date ('YYYY-MM-DD') and title, any order.
@@ -316,7 +323,7 @@ def progress_segments(conn, puuids, sessions, champion=None, queues=None,
     for segment in segments:
         base, params = _filtered_base(
             puuids, from_ms=segment["from_ms"], to_ms=segment["to_ms"] - 1,
-            champion=champion, queues=queues, require_opponent=False)
+            champion=champion, queues=queues, require_opponent=False, side=side)
         row = conn.execute(
             f"SELECT {_AGG}, {_metric_agg_select()} FROM ({base})", params).fetchone()
         totals = dict(row)
@@ -325,12 +332,13 @@ def progress_segments(conn, puuids, sessions, champion=None, queues=None,
     return results
 
 
-def segment_metrics(conn, puuids, from_ms=None, to_ms=None, champion=None, queues=None):
+def segment_metrics(conn, puuids, from_ms=None, to_ms=None, champion=None, queues=None,
+                    side=None):
     """Aggregate coaching metrics over a period. NULLs are excluded per metric;
     metrics_games reports how many games have a metrics record at all."""
     base, params = _filtered_base(puuids, from_ms=from_ms, to_ms=to_ms,
                                   champion=champion, queues=queues,
-                                  require_opponent=False)
+                                  require_opponent=False, side=side)
     row = conn.execute(
         f"""SELECT COUNT(*) AS games, COUNT(pm_match_id) AS metrics_games,
             {_metric_agg_select()}
@@ -352,13 +360,13 @@ _BUCKET_EXPRS = {
 }
 
 
-def trend_buckets(conn, puuids, bucket="month", champion=None, queues=None):
+def trend_buckets(conn, puuids, bucket="month", champion=None, queues=None, side=None):
     """Base stats + coaching metrics grouped per calendar bucket, oldest first.
     Week buckets are labeled with their Monday's date."""
     if bucket not in _BUCKET_EXPRS:
         raise ValueError(f"bucket must be one of {sorted(_BUCKET_EXPRS)}")
     base, params = _filtered_base(puuids, champion=champion, queues=queues,
-                                  require_opponent=False)
+                                  require_opponent=False, side=side)
     rows = conn.execute(
         f"""SELECT {_BUCKET_EXPRS[bucket]} AS bucket,
             COUNT(pm_match_id) AS metrics_games,
@@ -444,12 +452,12 @@ def _decode_game_runes(row):
 
 
 def games_in_range(conn, puuids, from_ms=None, to_ms=None, champion=None, queues=None,
-                   opp_champion=None, rank_tier=None):
+                   opp_champion=None, rank_tier=None, side=None):
     """Individual top-lane games for the tracked puuids, newest first."""
     base, params = _filtered_base(puuids, from_ms=from_ms, to_ms=to_ms,
                                   champion=champion, queues=queues,
                                   rank_tier=rank_tier, opp_champion=opp_champion,
-                                  require_opponent=False)
+                                  require_opponent=False, side=side)
     sql = f"""
         SELECT match_id, game_creation_ms, game_duration_s, queue_id, my_puuid,
                my_champion, opp_champion, rank_tier, win,

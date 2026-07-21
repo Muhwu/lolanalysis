@@ -98,6 +98,11 @@ change, not a crawler change.
 - `server/stats.py` — all aggregation in SQL over a filtered base query;
   matchup = tracked TOP player joined to enemy TOP participant; remakes
   (<300 s) excluded; opponent rank bucket `UNKNOWN` when not fetched.
+  `_filtered_base` takes a `side` filter ("blue"=team 100 / "red"=team 200,
+  via `_SIDE_TEAM`) threaded through matchups/summary/progress_segments/
+  segment_metrics/trend_buckets/games_in_range; endpoints read `?side=` (in
+  `stat_filters` for matchups/summary, explicit elsewhere). Frontend: a Side
+  select in the Overview/Matchups/Trends/Progress filter rows.
 - `server/app.py` — FastAPI; per-request sqlite connections; crawl runs in a
   daemon thread with module-level `CRAWL_STATE`; db path override via
   `LOL_DB_PATH` env (used by tests). "Hide my rank / LP" setting

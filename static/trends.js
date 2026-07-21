@@ -7,6 +7,7 @@ const trendState = {
   bucket: "month",
   champion: "",
   queue: "",
+  side: "", // "" all | blue | red
   data: null,
 };
 
@@ -37,6 +38,7 @@ async function initTrends() {
       }));
     $("#trend-champion").addEventListener("change", (e) => { trendState.champion = e.target.value; loadTrends(); });
     $("#trend-queue").addEventListener("change", (e) => { trendState.queue = e.target.value; loadTrends(); });
+    $("#trend-side").addEventListener("change", (e) => { trendState.side = e.target.value; loadTrends(); });
     renderMetricColPicker($("#trend-metric-cols"), "cp-metriccols-trends", () => {  // app.js
       if (trendState.data) { renderTrendCharts(); renderTrendTable(); }
     });
@@ -57,6 +59,7 @@ async function loadTrends() {
   const params = accountParams(new URLSearchParams({ bucket: trendState.bucket }));
   if (trendState.champion) params.set("champion", trendState.champion);
   if (trendState.queue) params.set("queue", trendState.queue);
+  if (trendState.side) params.set("side", trendState.side);
   const data = await getJSON(`/api/stats/trends?${params}`);
   if (seq !== trendState.seq) return; // superseded by a newer load
   trendState.data = data;

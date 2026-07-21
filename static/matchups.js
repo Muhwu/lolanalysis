@@ -14,6 +14,7 @@ const muState = {
   champion: "",
   queue: "",
   rankTier: "",
+  side: "", // "" all | blue | red
   minGames: 1,
   view: "flat", // flat | rank
   rows: [],
@@ -37,6 +38,7 @@ function muQuery() {
   if (muState.range !== "all") params.set("range", muState.range);
   if (muState.champion) params.set("champion", muState.champion);
   if (muState.queue) params.set("queue", muState.queue);
+  if (muState.side) params.set("side", muState.side);
   if (muState.rankTier) params.set("rank_tier", muState.rankTier);
   if (muState.minGames > 1) params.set("min_games", muState.minGames);
   return params;
@@ -54,6 +56,7 @@ async function initMatchups() {
       }));
     $("#mu-champion").addEventListener("change", (e) => { muState.champion = e.target.value; loadMatchups(); });
     $("#mu-queue").addEventListener("change", (e) => { muState.queue = e.target.value; loadMatchups(); });
+    $("#mu-side").addEventListener("change", (e) => { muState.side = e.target.value; loadMatchups(); });
     $("#mu-rank").addEventListener("change", (e) => { muState.rankTier = e.target.value; loadMatchups(); });
     $("#mu-min-games").addEventListener("change", (e) => {
       muState.minGames = Math.max(1, +e.target.value || 1); loadMatchups();

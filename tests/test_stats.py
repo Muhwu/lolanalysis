@@ -18,8 +18,10 @@ _counter = {"n": 0}
 
 def add_match(conn, my_champ="Garen", opp_champ="Darius", win=True, when=1_700_000_000_000,
               queue=420, duration=1800, my_pos="TOP", opp_pos="TOP", opp_puuid=None,
-              kills=6, deaths=3, assists=9, cs=210, gold=12000, dmg=18000, puuid=None):
+              kills=6, deaths=3, assists=9, cs=210, gold=12000, dmg=18000, puuid=None,
+              my_team=100):
     me = puuid or ME
+    opp_team = 200 if my_team == 100 else 100  # my_team 100 = blue, 200 = red
     _counter["n"] += 1
     match_id = f"EUW1_{_counter['n']}"
     opp_puuid = opp_puuid or f"opp-{_counter['n']}"
@@ -38,18 +40,18 @@ def add_match(conn, my_champ="Garen", opp_champ="Darius", win=True, when=1_700_0
     parts = []
     for i, pos in enumerate(positions):
         if pos == my_pos:
-            parts.append(part(me, my_champ, 100, pos, win, kills=kills, deaths=deaths,
+            parts.append(part(me, my_champ, my_team, pos, win, kills=kills, deaths=deaths,
                               assists=assists, cs=cs, gold=gold, dmg=dmg))
         else:
-            parts.append(part(f"ally-{_counter['n']}-{i}", "Ahri", 100, pos, win))
+            parts.append(part(f"ally-{_counter['n']}-{i}", "Ahri", my_team, pos, win))
     for i, pos in enumerate(positions):
         if pos == opp_pos:
-            parts.append(part(opp_puuid, opp_champ, 200, pos, not win))
+            parts.append(part(opp_puuid, opp_champ, opp_team, pos, not win))
         else:
             # if the designated opponent isn't TOP, leave the enemy TOP slot
             # positionless so the match genuinely has no TOP opponent
             enemy_pos = "" if (pos == "TOP" and opp_pos != "TOP") else pos
-            parts.append(part(f"enemy-{_counter['n']}-{i}", "Lux", 200, enemy_pos, not win))
+            parts.append(part(f"enemy-{_counter['n']}-{i}", "Lux", opp_team, enemy_pos, not win))
 
     db.insert_match(
         conn,
@@ -72,6 +74,20 @@ def test_matchups_basic_winrate(conn):
     assert by_champ["Darius"]["winrate"] == pytest.approx(2 / 3)
     assert by_champ["Teemo"]["winrate"] == 0.0
     assert rows[0]["opp_champion"] == "Darius"  # sorted by games desc
+
+
+def test_matchups_side_filter(conn):
+    add_match(conn, opp_champ="Darius", win=True, my_team=100)   # blue
+    add_match(conn, opp_champ="Darius", win=True, my_team=100)   # blue
+    add_match(conn, opp_champ="Darius", win=False, my_team=200)  # red
+    assert stats.matchups(conn, ME)[0]["games"] == 3             # both sides
+    assert stats.matchups(conn, ME, side="blue")[0]["games"] == 2
+    blue = stats.matchups(conn, ME, side="blue")[0]
+    assert blue["wins"] == 2 and blue["winrate"] == 1.0
+    red = stats.matchups(conn, ME, side="red")[0]
+    assert red["games"] == 1 and red["wins"] == 0
+    # summary respects it too
+    assert stats.summary(conn, ME, side="red")["games"] == 1
 
 
 def test_matchups_include_metric_averages(conn):

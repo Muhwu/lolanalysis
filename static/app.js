@@ -8,11 +8,13 @@ const state = {
   to: null,
   champion: "",
   queue: "",
+  side: "", // "" all | blue | red
   rankTier: "",
   minGames: 1,
   mainView: "overview", // overview | matchups | progress | trends | blocks | settings
   progressChampion: null, // null = not initialized yet (defaults to Gwen)
   progressQueue: "",
+  progressSide: "",
   ddragonVersion: null,
   ddragonVersions: [], // recent DDragon versions, newest first (patch picker)
   poolOrder: null, // champion pool flattened in priority order; null = not fetched
@@ -211,6 +213,7 @@ function queryString() {
   }
   if (state.champion) params.set("champion", state.champion);
   if (state.queue) params.set("queue", state.queue);
+  if (state.side) params.set("side", state.side);
   if (state.rankTier) params.set("rank_tier", state.rankTier);
   if (state.minGames > 1) params.set("min_games", state.minGames);
   return params.toString();
@@ -684,6 +687,7 @@ function progressFilterParams(segment) {
     new URLSearchParams({ from_ms: segment.from_ms, to_ms: segment.to_ms - 1 }));
   if (state.progressChampion) params.set("champion", state.progressChampion);
   if (state.progressQueue) params.set("queue", state.progressQueue);
+  if (state.progressSide) params.set("side", state.progressSide);
   return params;
 }
 
@@ -1133,6 +1137,7 @@ async function loadProgress() {
   const params = accountParams();
   if (state.progressChampion) params.set("champion", state.progressChampion);
   if (state.progressQueue) params.set("queue", state.progressQueue);
+  if (state.progressSide) params.set("side", state.progressSide);
   const [segments, sessionRows] = await Promise.all([
     getJSON(`/api/stats/progress?${params}`),
     getJSON("/api/sessions"),
@@ -1540,6 +1545,9 @@ function wireProgress() {
   $("#progress-queue").addEventListener("change", (e) => {
     state.progressQueue = e.target.value; loadProgress();
   });
+  $("#progress-side").addEventListener("change", (e) => {
+    state.progressSide = e.target.value; loadProgress();
+  });
   $("#session-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const errorEl = $("#session-error");
@@ -1746,6 +1754,7 @@ function wireFilters() {
   $("#date-to").addEventListener("change", (e) => { state.to = e.target.value; refresh(); });
   $("#champion-select").addEventListener("change", (e) => { state.champion = e.target.value; refresh(); });
   $("#queue-select").addEventListener("change", (e) => { state.queue = e.target.value; refresh(); });
+  $("#side-select").addEventListener("change", (e) => { state.side = e.target.value; refresh(); });
   $("#rank-select").addEventListener("change", (e) => { state.rankTier = e.target.value; refresh(); });
   $("#min-games").addEventListener("change", (e) => { state.minGames = Math.max(1, +e.target.value || 1); refresh(); });
   // one picker for the whole progress table: base columns (default on) + metric

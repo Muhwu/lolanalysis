@@ -1,6 +1,13 @@
 {
   "entries": [
     {
+      "version": "1.45.0",
+      "date": "2026-07-21",
+      "items": [
+        "Blue/red side filter added to the Matchups, Overview, Trends and Coaching-progress filter rows — see your stats for games where you were on a specific side"
+      ]
+    },
+    {
       "version": "1.44.1",
       "date": "2026-07-21",
       "items": [
