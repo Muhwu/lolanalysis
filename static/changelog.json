@@ -1,6 +1,13 @@
 {
   "entries": [
     {
+      "version": "1.45.0",
+      "date": "2026-07-21",
+      "items": [
+        "Rune analysis in the Matchup guide — expand a matchup to see which keystone and secondary tree have your best win rate there, straight from the runes you actually played"
+      ]
+    },
+    {
       "version": "1.44.1",
       "date": "2026-07-21",
       "items": [
